@@ -6,7 +6,7 @@ const UNIT: &str = "UNIT";
 pub struct Acceptor<'a> {
     /// Map of states to the states to which they can transition; states are identified as the
     /// index in the vec
-    transitions: Vec<HashMap<&'a str, usize>>,
+    transitions: Vec<HashMap<&'a str, Vec<usize>>>,
     /// The start state of the machine
     start_state: usize,
     /// The states that count as completed
@@ -66,15 +66,17 @@ fn re_internal_follow_null_transitions<'a>(
     acceptor: &'a Acceptor,
     new_states: HashSet<usize>,
 ) -> HashSet<usize> {
-    let mut collapsed_states = HashSet::new();
+    let mut collapsed_states = HashSet::<usize>::new();
     let mut states = new_states.into_iter().collect::<Vec<usize>>();
 
     while let Some(state) = states.pop() {
         collapsed_states.insert(state);
         if let Some(transitions) = acceptor.transitions.get(state) {
-            for (symbol, next) in transitions.iter() {
+            for (symbol, nexts) in transitions.iter() {
                 if UNIT == *symbol {
-                    collapsed_states.insert(*next);
+                    for next in nexts.iter() {
+                        collapsed_states.insert(*next);
+                    }
                 }
             }
         }
@@ -101,9 +103,11 @@ pub fn re_accept_match<'a>(acceptor: &'a Acceptor, input: &str) -> Option<Match>
         let mut new_states: HashSet<usize> = HashSet::new();
 
         for state in curr_states.iter() {
-            for (symbol, next) in acceptor.transitions[*state].iter() {
+            for (symbol, nexts) in acceptor.transitions[*state].iter() {
                 if re_internal_symbol_match(symbol, input) {
-                    new_states.insert(*next);
+                    for next in nexts.iter() {
+                        new_states.insert(*next);
+                    }
                 }
             }
         }
@@ -179,9 +183,9 @@ mod tests {
         // pattern: `ab+`
         let acceptor = Acceptor {
             transitions: vec![
-                HashMap::from([("a", 1)]),
-                HashMap::from([("b", 2)]),
-                HashMap::from([("b", 2)]),
+                HashMap::from([("a", vec![1])]),
+                HashMap::from([("b", vec![2])]),
+                HashMap::from([("b", vec![2])]),
             ],
             start_state: 0,
             accept_states: HashSet::from([2]),
@@ -208,9 +212,9 @@ mod tests {
         // pattern: `ab+`
         let acceptor = Acceptor {
             transitions: vec![
-                HashMap::from([("a", 1)]),
-                HashMap::from([("b", 2)]),
-                HashMap::from([("b", 2)]),
+                HashMap::from([("a", vec![1])]),
+                HashMap::from([("b", vec![2])]),
+                HashMap::from([("b", vec![2])]),
             ],
             start_state: 0,
             accept_states: HashSet::from([2]),
@@ -229,9 +233,9 @@ mod tests {
         // pattern: `ab+`
         let acceptor = Acceptor {
             transitions: vec![
-                HashMap::from([("a", 1)]),
-                HashMap::from([("b", 2)]),
-                HashMap::from([("b", 2)]),
+                HashMap::from([("a", vec![1])]),
+                HashMap::from([("b", vec![2])]),
+                HashMap::from([("b", vec![2])]),
             ],
             start_state: 0,
             accept_states: HashSet::from([2]),
@@ -250,10 +254,10 @@ mod tests {
         // pattern: `ab+c*d`
         let acceptor = Acceptor {
             transitions: vec![
-                HashMap::from([("a", 1)]),
-                HashMap::from([("b", 2)]),
-                HashMap::from([("b", 2), (UNIT, 3)]),
-                HashMap::from([("c", 3), ("d", 4)]),
+                HashMap::from([("a", vec![1])]),
+                HashMap::from([("b", vec![2])]),
+                HashMap::from([("b", vec![2]), (UNIT, vec![3])]),
+                HashMap::from([("c", vec![3]), ("d", vec![4])]),
                 // HashMap::from([(UNIT, 4)]),
             ],
             start_state: 0,
@@ -279,9 +283,9 @@ mod tests {
     fn test_miss() {
         let acceptor = Acceptor {
             transitions: vec![
-                HashMap::from([("a", 1)]),
-                HashMap::from([("b", 2)]),
-                HashMap::from([("b", 2)]),
+                HashMap::from([("a", vec![1])]),
+                HashMap::from([("b", vec![2])]),
+                HashMap::from([("b", vec![2])]),
             ],
             start_state: 0,
             accept_states: HashSet::from([2]),
@@ -296,9 +300,9 @@ mod tests {
     fn test_longer_match() {
         let acceptor = Acceptor {
             transitions: vec![
-                HashMap::from([("a", 1)]),
-                HashMap::from([("b", 2)]),
-                HashMap::from([("b", 2)]),
+                HashMap::from([("a", vec![1])]),
+                HashMap::from([("b", vec![2])]),
+                HashMap::from([("b", vec![2])]),
             ],
             start_state: 0,
             accept_states: HashSet::from([2]),
