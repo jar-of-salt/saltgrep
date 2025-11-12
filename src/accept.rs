@@ -84,6 +84,29 @@ fn re_internal_follow_null_transitions<'a>(
     collapsed_states
 }
 
+fn re_internal_transition<'a>(
+    acceptor: &'a Acceptor,
+    curr_states: &HashSet<usize>,
+    input_char: &str,
+) -> HashSet<usize> {
+    let mut new_states: HashSet<usize> = HashSet::new();
+
+    for state in curr_states.iter() {
+        for (symbol, nexts) in acceptor.transitions[*state].iter() {
+            if re_internal_symbol_match(symbol, input_char) {
+                for next in nexts.iter() {
+                    new_states.insert(*next);
+                }
+            }
+        }
+    }
+
+    // handle UNIT transitions, as they should not consume a character
+    new_states = re_internal_follow_null_transitions(acceptor, new_states);
+
+    new_states
+}
+
 fn re_internal_check_acceptance(
     accept_states: &HashSet<usize>,
     curr_states: &HashSet<usize>,
@@ -99,21 +122,8 @@ pub fn re_accept_match<'a>(acceptor: &'a Acceptor, input: &str) -> Option<Match>
     let mut curr_match = InternalMatch::new();
     curr_match.set_start(curr_start as isize);
 
-    for (index, &input) in inputs[curr_start..].iter().enumerate() {
-        let mut new_states: HashSet<usize> = HashSet::new();
-
-        for state in curr_states.iter() {
-            for (symbol, nexts) in acceptor.transitions[*state].iter() {
-                if re_internal_symbol_match(symbol, input) {
-                    for next in nexts.iter() {
-                        new_states.insert(*next);
-                    }
-                }
-            }
-        }
-
-        // handle UNIT transitions, as they should not consume a character
-        new_states = re_internal_follow_null_transitions(acceptor, new_states);
+    for (index, &input_char) in inputs[curr_start..].iter().enumerate() {
+        let new_states = re_internal_transition(acceptor, &curr_states, &input_char);
 
         if re_internal_check_acceptance(&acceptor.accept_states, &new_states) {
             curr_match.set_end((index + 1) as isize);
@@ -127,8 +137,6 @@ pub fn re_accept_match<'a>(acceptor: &'a Acceptor, input: &str) -> Option<Match>
 
         // if (new_states.len() == 0) {}
     }
-
-    // curr_states = HashSet::from([acceptor.start_state]);
 
     if curr_match.end >= 0 {
         Some(Match::from_internal(curr_match))
