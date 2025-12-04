@@ -2,27 +2,82 @@
 // input pattern -> tokens -> parse? into NFA
 // TODO: visualize!
 
-#[derive(Debug, PartialEq, Eq)]
-enum Token {
-    Root,
-    LeftParenthesis(usize),    // (
-    RightParenthesis(usize),   // (
-    LeftSquareBracket(usize),  // [
-    RightSquareBracket(usize), // ]
-    Or(usize),                 // |
-    ZeroOrMore(usize),         // *
-    OneOrMore(usize),          // +
-    ZeroOrOne(usize),          // ?
-    Backslash(usize),          // \
-    Character(usize),          // ., a, b, !, etc.
-    EscapedCharacter(usize),   // \t, \n, \\, etc.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Token {
+    Cons,                    // Concatenation
+    OpenGroup,               // (
+    CloseGroup,              // (
+    LeftSquareBracket,       // [
+    RightSquareBracket,      // ]
+    Or,                      // |
+    ZeroOrMore,              // *
+    OneOrMore,               // +
+    ZeroOrOne,               // ?
+    Backslash(usize),        // \
+    Character(usize),        // ., a, b, !, etc.
+    EscapedCharacter(usize), // \t, \n, \\, etc.
     CharacterSet(usize, usize, bool), // [a-c], etc; [^a-c], etc when bool is false
-                               // Whitespace(usize),
-                               // NonWhitespace(usize),
-                               // Digit(usize),
-                               // NonDigit(usize),
-                               // Word(usize),
-                               // NonWord(usize),
+                             // Whitespace(usize),
+                             // NonWhitespace(usize),
+                             // Digit(usize),
+                             // NonDigit(usize),
+                             // Word(usize),
+                             // NonWord(usize),
+}
+
+fn should_join_literals(token: &Token) -> bool {
+    match &token {
+        Token::CloseGroup
+        | Token::ZeroOrMore
+        | Token::OneOrMore
+        | Token::ZeroOrOne
+        | Token::Character(_)
+        | Token::EscapedCharacter(_)
+        | Token::CharacterSet(_, _, _) => true,
+        _ => false,
+    }
+}
+
+pub enum Arity {
+    Binary,
+    Unary,
+    NoOp,
+}
+
+impl Token {
+    fn get_precedence(self: &Self) -> i8 {
+        -(match &self {
+            Token::LeftSquareBracket | Token::RightSquareBracket => 3,
+            // TODO: OpenGroup might not need to be here; aka should not get popped from op stack
+            // if lower priority operator is encountered
+            Token::CloseGroup => 4,
+            Token::ZeroOrMore | Token::OneOrMore | Token::ZeroOrOne => 5,
+            Token::Cons => 6,
+            Token::Or => 8,
+            Token::OpenGroup => 10, // CloseGroup represents () grouping operator precedence, this
+            // needs to be low so it doesn't mess with ordering with other
+            // operators
+            _ => 0,
+        })
+    }
+
+    pub fn precedes(self: &Self, other: &Self) -> bool {
+        self.get_precedence() > other.get_precedence()
+    }
+
+    pub fn same_precedence_as(self: &Self, other: &Self) -> bool {
+        self.get_precedence() == other.get_precedence()
+    }
+
+    pub fn arity(self: &Self) -> Arity {
+        match self {
+            Token::ZeroOrMore | Token::OneOrMore | Token::ZeroOrOne | Token::CloseGroup => {
+                Arity::Unary
+            }
+            Token::Cons | Token::Or => Arity::Binary,
+            _ => Arity::NoOp,
+        }
+    }
 }
 
 // +---+----------------------------------------------------------+
@@ -65,34 +120,53 @@ fn re_internal_munch_character_class(input: &[u8], position: usize) -> (Token, u
     }
 }
 
-fn re_internal_munch_token(input: &[u8], character: &[u8], position: usize) -> (Token, usize) {
+// TODO: improve name; it inserts a cons if necessary
+fn insert_cons(tokens: &mut Vec<Token>) {
+    if let Some(token) = tokens.last() {
+        if should_join_literals(token) {
+            tokens.push(Token::Cons);
+        }
+    }
+}
+
+fn re_internal_munch_token(
+    input: &[u8],
+    character: &[u8],
+    position: usize,
+    tokens: &mut Vec<Token>,
+) -> (Token, usize) {
     let mut new_position = position;
     (
         match character {
-            b"(" => Token::LeftParenthesis(position),
-            b")" => Token::RightParenthesis(position),
+            b"(" => Token::OpenGroup,
+            b")" => Token::CloseGroup,
             b"[" => {
                 let (token, end_char_class) = re_internal_munch_character_class(input, position);
                 new_position = end_char_class;
                 println!("character set end {:?}", new_position);
                 println!("token: {:?}", token);
+                insert_cons(tokens);
                 token
             }
-            b"|" => Token::Or(position),
-            b"*" => Token::ZeroOrMore(position),
-            b"+" => Token::OneOrMore(position),
-            b"?" => Token::ZeroOrOne(position),
+            b"|" => Token::Or,
+            b"*" => Token::ZeroOrMore,
+            b"+" => Token::OneOrMore,
+            b"?" => Token::ZeroOrOne,
             b"\\" => {
                 new_position += 1;
+                insert_cons(tokens);
                 Token::EscapedCharacter(position)
             }
-            _ => Token::Character(position),
+            _ => {
+                insert_cons(tokens);
+                Token::Character(position)
+            }
         },
         new_position,
     )
 }
 
-fn re_tokenize(input: &[u8]) -> Vec<Token> {
+pub fn re_tokenize(input: &[u8]) -> (Vec<Token>, &[u8]) {
     let mut position = 0;
     let mut tokens = Vec::new();
     let num_chars = input.len();
@@ -102,12 +176,12 @@ fn re_tokenize(input: &[u8]) -> Vec<Token> {
     while position < num_chars {
         println!("{:?}", position);
         let (token, new_position) =
-            re_internal_munch_token(input, &input[position..position + 1], position);
+            re_internal_munch_token(input, &input[position..position + 1], position, &mut tokens);
         position = new_position + 1;
         tokens.push(token);
     }
 
-    tokens
+    (tokens, input)
 }
 
 // fn re_example_pattern<'a>() {
@@ -183,22 +257,42 @@ mod tests {
         assert_eq!(
             vec![
                 Token::Character(0),
+                Token::Cons,
                 Token::Character(1),
+                Token::Cons,
                 Token::Character(2),
+                Token::Cons,
                 Token::Character(3),
+                Token::Cons,
                 Token::CharacterSet(4, 8, false),
-                Token::OneOrMore(8),
+                Token::OneOrMore,
+                Token::Cons,
                 Token::Character(9),
-                Token::ZeroOrMore(10),
-                Token::Or(11),
+                Token::ZeroOrMore,
+                Token::Or,
                 Token::Character(12),
-                Token::ZeroOrOne(13),
+                Token::ZeroOrOne,
+                Token::Cons,
                 Token::Character(14),
+                Token::Cons,
                 Token::EscapedCharacter(15),
+                Token::Cons,
                 Token::Character(17),
-                Token::CharacterSet(18, 24, true)
+                Token::Cons,
+                Token::CharacterSet(18, 24, true),
+                Token::OpenGroup,
+                Token::Character(25),
+                Token::Cons,
+                Token::Character(26),
+                Token::Cons,
+                Token::Character(27),
+                Token::Cons,
+                Token::Character(28),
+                Token::CloseGroup,
+                Token::Cons,
+                Token::Character(30)
             ],
-            re_tokenize(b"abce[fg]+h*|i?j\\kl[^a-c]")
+            re_tokenize(b"abce[fg]+h*|i?j\\kl[^a-c](abcd)i").0
         )
     }
 }
