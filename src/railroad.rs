@@ -197,9 +197,12 @@ fn add_group(
         let new_ref = ast.add(get_operator_node(op_token, out_stack));
         out_stack.push(new_ref);
     }
-    let group_contents = out_stack
-        .pop()
-        .unwrap_or_else(|| panic!("Nothing to group at {}", group_pos));
+    let group_contents = out_stack.pop().unwrap_or_else(|| {
+        ast.add(AstNode::Literal(
+            LiteralType::Character,
+            Token::empty_string(group_pos),
+        ))
+    });
     let new_ref = ast.add(AstNode::Group(group_contents));
     out_stack.push(new_ref);
 }
@@ -236,6 +239,11 @@ mod tests {
     #[should_panic]
     fn test_no_open_group() {
         Ast::from_tokens(tokenize::tokenize(b"abcd*abcd(abcde)?fg+)?"));
+    }
+
+    #[test]
+    fn test_empty_group() {
+        Ast::from_tokens(tokenize::tokenize(b"()"));
     }
 
     // TODO: expected message
