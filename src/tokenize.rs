@@ -14,6 +14,7 @@ pub enum LiteralType {
     Character,
     EscapedCharacter,
     CharacterClass(bool),
+    EmptyString,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -82,7 +83,7 @@ impl Token {
 
     pub fn empty_string(position: usize) -> Self {
         Token {
-            kind: TokenType::Literal(LiteralType::Character),
+            kind: TokenType::Literal(LiteralType::EmptyString),
             position: (position, position),
             flags: 0x0,
         }
