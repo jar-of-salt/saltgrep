@@ -12,6 +12,7 @@ pub enum AstNode {
     Literal(Token),
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Ast(Vec<AstNode>);
 
 impl ToString for Ast {
@@ -44,26 +45,84 @@ impl ToString for Ast {
 }
 
 impl Ast {
-    fn add(&mut self, node: AstNode) -> AstRef {
+    pub fn add(&mut self, node: AstNode) -> AstRef {
         let idx = self.0.len();
         self.0.push(node);
         AstRef(idx.try_into().expect("too many nodes in the AST"))
     }
 
-    fn get(&self, node_ref: AstRef) -> &AstNode {
+    pub fn get(&self, node_ref: AstRef) -> &AstNode {
         &self.0[node_ref.0 as usize]
     }
 
-    fn pprint(&self) {
+    pub fn pprint(&self) {
         println!("{}", self.to_string());
     }
-}
 
-// fn to_literal(token: Token) -> AstNode {
-//     match token {
-//         Token::Character(pos) => AstNode(token,
-//     }
-// }
+    pub fn from_tokens(tokens: Vec<Token>) -> Ast {
+        let mut ast = Ast(Vec::with_capacity(2 * tokens.len()));
+        let mut out_stack = Vec::<AstRef>::with_capacity(tokens.len());
+        let mut op_stack = Vec::with_capacity(tokens.len() / 2);
+
+        for token in tokens {
+            match token {
+                // when token is a character, or character-like object, push to output
+                Token::Character(_) | Token::EscapedCharacter(_) | Token::CharacterSet(_, _, _) => {
+                    out_stack.push(ast.add(AstNode::Literal(token)));
+                }
+                // when a group opens, push to operators
+                Token::OpenGroup => {
+                    op_stack.push(token);
+                }
+                // when a group closes, greedily consume the operator stack
+                Token::CloseGroup => {
+                    // TODO: add group position
+                    add_group(0, &mut ast, &mut op_stack, &mut out_stack);
+                }
+                // Quantifiers are tightly bound, no op-stack nonsense for them, always bind
+                // immediately
+                Token::ZeroOrMore | Token::OneOrMore | Token::ZeroOrOne => {
+                    let new_ref = ast.add(AstNode::Quantifier(
+                        token,
+                        out_stack.pop().expect("No operand found for quantifier"),
+                    ));
+                    out_stack.push(new_ref);
+                }
+                // Handle all other operations
+                op_token => {
+                    while let Some(previous_op) = op_stack.last() {
+                        // Stop consuming if the previous operation is lower precedence than this one
+                        if op_token.precedes(previous_op)
+                            && !op_token.same_precedence_as(previous_op)
+                        {
+                            break;
+                        }
+                        let popped_op = op_stack.pop().unwrap();
+                        let new_ref = ast.add(get_operator_node(popped_op, &mut out_stack));
+                        out_stack.push(new_ref);
+                    }
+                    op_stack.push(op_token);
+                }
+            }
+        }
+
+        // issue is handling of the alternation/cons on the op stack
+
+        while let Some(operation) = op_stack.pop() {
+            let new_ref = ast.add(get_operator_node(operation, &mut out_stack));
+            out_stack.push(new_ref);
+        }
+
+        ast
+    }
+
+    /// Alias for Ast::from_tokens.
+    ///
+    /// Reference to Shunting-Yard Algorithm.
+    pub fn railroad(tokens: Vec<Token>) -> Ast {
+        Ast::from_tokens(tokens)
+    }
+}
 
 fn get_binary_operands(out_stack: &mut Vec<AstRef>) -> (AstRef, AstRef) {
     let right = out_stack.pop().expect("No RHS for operator");
@@ -116,7 +175,6 @@ fn add_group(
         if let Token::OpenGroup = op_token {
             break;
         }
-        println!("Pushing OP to AST -> {:?}", op_token);
         let new_ref = ast.add(get_operator_node(op_token, out_stack));
         out_stack.push(new_ref);
     }
@@ -127,93 +185,24 @@ fn add_group(
     out_stack.push(new_ref);
 }
 
-// note: ast.last() always returns the most recently added item
-pub fn railroad_2_ast(tokens: Vec<Token>) -> Ast {
-    let mut ast = Ast(Vec::with_capacity(2 * tokens.len()));
-    let mut out_stack = Vec::<AstRef>::with_capacity(tokens.len());
-    let mut op_stack = Vec::with_capacity(tokens.len() / 2);
-
-    for token in tokens {
-        match token {
-            // when token is a character, or character-like object, push to output
-            Token::Character(_) | Token::EscapedCharacter(_) | Token::CharacterSet(_, _, _) => {
-                println!("Pushing literal to AST -> {:?}", token);
-                out_stack.push(ast.add(AstNode::Literal(token)));
-            }
-            // when a group opens, push to operators
-            Token::OpenGroup => {
-                println!("Pushing '(' to OPs -> {:?}", token);
-                op_stack.push(token);
-            }
-            // when a group closes, greedily consume the operator stack
-            Token::CloseGroup => {
-                // TODO: add group position
-                println!("Closing groups -> {:?}", token);
-                add_group(0, &mut ast, &mut op_stack, &mut out_stack);
-            }
-            // Quantifiers are tightly bound, no op-stack nonsense for them, always bind
-            // immediately
-            Token::ZeroOrMore | Token::OneOrMore | Token::ZeroOrOne => {
-                println!("Pushing Quantifier to AST -> {:?}", token);
-                let new_ref = ast.add(AstNode::Quantifier(
-                    token,
-                    out_stack.pop().expect("No operand found for quantifier"),
-                ));
-                out_stack.push(new_ref);
-            }
-            // Handle all other operations
-            op_token => {
-                println!("Unwinding OPs -> {:?}", op_token);
-                while let Some(previous_op) = op_stack.last() {
-                    // Stop consuming if the previous operation is lower precedence than this one
-                    if op_token.precedes(previous_op) && !op_token.same_precedence_as(previous_op) {
-                        println!("{:?} precedes {:?}, done unwinding", op_token, previous_op);
-                        break;
-                    }
-                    let popped_op = op_stack.pop().unwrap();
-                    println!("Pushing OP to AST -> {:?}", popped_op);
-                    let new_ref = ast.add(get_operator_node(popped_op, &mut out_stack));
-                    out_stack.push(new_ref);
-                }
-                op_stack.push(op_token);
-            }
-        }
-    }
-
-    // issue is handling of the alternation/cons on the op stack
-
-    while let Some(operation) = op_stack.pop() {
-        let new_ref = ast.add(get_operator_node(operation, &mut out_stack));
-        out_stack.push(new_ref);
-    }
-
-    ast
-}
-// - push ( to op-stack
-// - push a to AST, out_stack
-// - push J to op stack
-// - push b to AST, out_stack
-// - push + to AST, pop b from out_stack + connect, push to out_stack
-// - J matches precedence at top of op stack, pop old J from top of op-stack + pop 2 from out_stack
-// to fill operator, then push to AST + out_stack; push new J to op-stack
-// - push c to AST, out-stack
-// - same w/ J as before
-// - push d to AST, out-stack
-// - group closure ) precedes J at top of op-stack, pop J + pop two from out-stack, push to AST +
-// out-stack; keep popping from op-stack until we find a ( to discard, pop top of out-stack to fill
-// Group, and push G to AST + out-stack
-// - push J to op-stack
-// - push e to AST + out-stack
-// - | has lower precedence than J at top of op-stack, pop J and two from out-stack, push J to AST
-// + out-stack, push | to op-stack
-// - push f to AST + out-stack
-// - pop one from out-stack, attach to * and push to AST + out-stack
-// since no more tokens, pop all from op-stack, attaching the appropriate number of operators to
-// each from out-stack
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_pointless_equivalence() {
+        let tokens = vec![
+            Token::Character(1),
+            Token::Or,
+            Token::Character(2),
+            Token::Or,
+            Token::Character(3),
+        ];
+        assert_eq!(
+            Ast::from_tokens(tokens.clone()),
+            Ast::railroad(tokens.clone())
+        );
+    }
 
     #[test]
     fn test_alternation_associativity() {
@@ -234,7 +223,7 @@ mod tests {
                 AstNode::Literal(Token::Character(3)),
                 AstNode::Alternation(AstRef(2), AstRef(3))
             ],
-            railroad_2_ast(tokens).0
+            Ast::railroad(tokens).0
         );
     }
 
@@ -257,12 +246,12 @@ mod tests {
                 AstNode::Literal(Token::Character(3)),
                 AstNode::Cons(AstRef(2), AstRef(3))
             ],
-            railroad_2_ast(tokens).0
+            Ast::from_tokens(tokens).0
         );
     }
 
     #[test]
-    fn test_mixed_pattern_1_for_AST() {
+    fn test_mixed_pattern_1_for_ast() {
         // Pseudo-pattern: (12+34)5|6*
         let tokens = vec![
             Token::OpenGroup,
@@ -299,12 +288,12 @@ mod tests {
                 AstNode::Quantifier(Token::ZeroOrMore, AstRef(11)),
                 AstNode::Alternation(AstRef(10), AstRef(12))
             ],
-            railroad_2_ast(tokens).0
+            Ast::from_tokens(tokens).0
         );
     }
 
     #[test]
-    fn test_mixed_pattern_2_for_AST_and_RPN() {
+    fn test_mixed_pattern_2_for_ast_and_rpn() {
         // Pseudo-pattern: (12+(34)*5(6(7)8))9?|(10(11(12|13|14)))
         let tokens = vec![
             Token::OpenGroup,
@@ -356,7 +345,7 @@ mod tests {
         // Test RPN
         assert_eq!(
             "1 2 + J 3 4 J G * J 5 J 6 7 G J 8 J G J G 9 ? J 10 11 12 13 | 14 | G J G J G |",
-            railroad_2_ast(tokens.clone()).to_string()
+            Ast::from_tokens(tokens.clone()).to_string()
         );
 
         assert_eq!(
@@ -399,7 +388,7 @@ mod tests {
                 AstNode::Group(AstRef(34)),
                 AstNode::Alternation(AstRef(23), AstRef(35))
             ],
-            railroad_2_ast(tokens).0
+            Ast::from_tokens(tokens).0
         );
     }
 }
