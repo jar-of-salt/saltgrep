@@ -18,7 +18,7 @@ pub enum AstNode {
 // TODO: separate this so Tokens implement To<AstNode>? Just evaluate more separation of concerns
 
 #[derive(Debug, PartialEq)]
-pub struct Ast(Vec<AstNode>);
+pub struct Ast(pub Vec<AstNode>);
 
 impl ToString for Ast {
     fn to_string(&self) -> String {
