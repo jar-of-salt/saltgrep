@@ -1,6 +1,6 @@
 use crate::gex::{GexMachine, Next, Rule, State};
 use crate::railroad::{Ast, AstNode};
-use crate::tokenize::{tokenize, QuantifierType, Token};
+use crate::tokenize::{tokenize, LiteralType, QuantifierType, Token, shift_chars};
 
 fn machine_for(token: Token, input: &[u8]) -> GexMachine {
     let range_value = input[token.input_range()][0];
@@ -14,6 +14,24 @@ fn machine_for(token: Token, input: &[u8]) -> GexMachine {
             State::accept_state(),
         ],
     };
+}
+
+fn machine_for_character(character: u8) -> GexMachine {
+    return GexMachine {
+        states: vec![
+            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
+            State::from_transitions(vec![(Rule::Range(character, character), Next::Target(2))]),
+            State::accept_state(),
+        ],
+    };
+}
+
+fn machine_for_literal(literal_type: LiteralType, input: &[u8]) -> GexMachine {
+    match literal_type {
+        // TODO: evaluate for potential UTF-8 handling
+        LiteralType::Character => machine_for_character(input[0]),
+        LiteralType::EscapedCharacter => machien_for_character(input[1]);
+    }
 }
 
 // NOTE: maybe it would have been easier to figure out token/astnode type layout by writing this
