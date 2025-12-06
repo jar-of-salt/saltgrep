@@ -321,7 +321,14 @@ mod tests {
                 Token::cons(3),
                 Token::create(TokenType::Literal(LiteralType::Character), 3),
                 Token::cons(4),
-                Token::create_long(TokenType::Literal(LiteralType::CharacterClass(CharacterClassType::Manual, true)), 4, 8),
+                Token::create_long(
+                    TokenType::Literal(LiteralType::CharacterClass(
+                        CharacterClassType::Manual,
+                        true
+                    )),
+                    4,
+                    8
+                ),
                 Token::quantifier(QuantifierType::OneOrMore, 8),
                 Token::cons(9),
                 Token::create(TokenType::Literal(LiteralType::Character), 9),
@@ -337,9 +344,13 @@ mod tests {
                 Token::create(TokenType::Literal(LiteralType::Character), 17),
                 Token::cons(18),
                 Token::create_long(
-                    TokenType::Literal(LiteralType::CharacterClass(CharacterClassType::Manual), false)),
+                    TokenType::Literal(LiteralType::CharacterClass(
+                        CharacterClassType::Manual,
+                        false
+                    ),),
                     18,
                     24
+                ),
                 Token::cons(24),
                 Token::open_group(24),
                 Token::create(TokenType::Literal(LiteralType::Character), 25),
