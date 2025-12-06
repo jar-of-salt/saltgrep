@@ -20,7 +20,7 @@ pub type Transition = (Rule, Next);
 /// state machine state.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
-    transitions: Vec<Transition>,
+    pub transitions: Vec<Transition>,
 }
 
 impl State {
@@ -39,13 +39,6 @@ impl State {
     }
 }
 
-/// A Non-deterministic Finite Automata for acceptance evaluation is represented here.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct GexMachine {
-    /// Each state is a vector of unicode ranges and the state they map to
-    states: Vec<State>,
-}
-
 fn shifter(shift: usize) -> impl Fn(State) -> State {
     move |mut state: State| {
         for idx in 0..state.transitions.len() {
@@ -60,6 +53,13 @@ fn shifter(shift: usize) -> impl Fn(State) -> State {
     }
 }
 
+/// A Non-deterministic Finite Automata for acceptance evaluation is represented here.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct GexMachine {
+    /// Each state is a vector of unicode ranges and the state they map to
+    pub states: Vec<State>,
+}
+
 // TODO: implement find w/ explain -> might be hard with this implementation
 
 /// NFA implementation for solving regex.
@@ -71,13 +71,15 @@ impl GexMachine {
     pub fn with_capacity(cap: usize) -> Self {
         let mut states = Vec::with_capacity(cap);
         states.push(State {
-            transitions: vec![(Rule::Null, Next::Accept)],
+            transitions: vec![(Rule::Null, Next::Target(1))],
         });
+        states.push(State::accept_state());
         GexMachine { states }
     }
 
     pub fn default() -> Self {
-        // TODO: make this have a reasonable guess of the size of the NFA
+        // TODO: when making a machine from a pattern, have a reasonable guess at the size of the
+        // NFA
         GexMachine::with_capacity(1_000_000)
     }
 
@@ -141,6 +143,11 @@ impl GexMachine {
 
         self.states.extend(new_states);
 
+        self
+    }
+
+    // TODO: implement capturing groups
+    pub fn group(self) -> Self {
         self
     }
 
@@ -369,7 +376,7 @@ mod tests {
             states: vec![
                 State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
                 State::from_transitions(vec![(Rule::Range(atom, atom), Next::Target(2))]),
-                State::from_transitions(vec![(Rule::Null, Next::Accept)]),
+                State::accept_state(),
             ],
         }
     }
