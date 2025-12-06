@@ -1,6 +1,14 @@
 // todo: tokenizer
 // input pattern -> tokens -> parse? into NFA
 // TODO: visualize!
+use std::ops::Range;
+
+// If I want to try supporting UTF-16 etc.
+const CHAR_WIDTH: usize = 1;
+
+fn shift_chars(position: usize, shift: usize) -> usize {
+    position + shift * CHAR_WIDTH
+}
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum QuantifierType {
@@ -11,10 +19,21 @@ pub enum QuantifierType {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum LiteralType {
+    // TODO: implement wildcard
+    Wildcard,
     Character,
     EscapedCharacter,
-    CharacterClass(bool),
+    CharacterClass(CharacterClassType, bool),
     EmptyString,
+}
+
+// TODO: implement other character classes
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum CharacterClassType {
+    Manual,
+    Whitespace,
+    Digit,
+    Word,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -79,6 +98,10 @@ impl Token {
 
     fn close_group(position: usize) -> Self {
         Token::create(TokenType::CloseGroup, position)
+    }
+
+    pub fn input_range(&self) -> Range<usize> {
+        self.position.0..self.position.1
     }
 
     pub fn empty_string(position: usize) -> Self {
@@ -156,7 +179,10 @@ fn munch_character_class(input: &[u8], position: usize) -> (Token, usize) {
     if let Some(close_bracket_position) = found {
         let positive_match = &remaining_input[0..1] != b"^";
         let token = Token::create_long(
-            TokenType::Literal(LiteralType::CharacterClass(positive_match)),
+            TokenType::Literal(LiteralType::CharacterClass(
+                CharacterClassType::Manual,
+                positive_match,
+            )),
             position,
             close_bracket_position + 1, // need the position AFTER the ] k
         );
@@ -166,6 +192,47 @@ fn munch_character_class(input: &[u8], position: usize) -> (Token, usize) {
         // TODO: add error reporting module
         panic!("Unterminated character set at {}", position);
     }
+}
+
+fn munch_character_class_escape(input: &[u8], position: usize) -> Option<Token> {
+    let end_position = shift_chars(position, 2);
+    match input {
+        br"\s" | br"\S" => Some(Token::create_long(
+            TokenType::Literal(LiteralType::CharacterClass(
+                CharacterClassType::Whitespace,
+                input == br"\s",
+            )),
+            position,
+            end_position,
+        )),
+        br"\w" | br"\W" => Some(Token::create_long(
+            TokenType::Literal(LiteralType::CharacterClass(
+                CharacterClassType::Word,
+                input == br"\w",
+            )),
+            position,
+            end_position,
+        )),
+        br"\d" | br"\D" => Some(Token::create_long(
+            TokenType::Literal(LiteralType::CharacterClass(
+                CharacterClassType::Digit,
+                input == br"\d",
+            )),
+            position,
+            end_position,
+        )),
+        _ => None,
+    }
+}
+
+fn munch_escape_character(position: usize) -> Token {
+    // supports arbitrary escape characters, but also gives me flexibility to add word boundary
+    // support in the future, etc. etc.
+    Token::create_long(
+        TokenType::Literal(LiteralType::EscapedCharacter),
+        position,
+        shift_chars(position, 2),
+    )
 }
 
 // TODO: improve name; it inserts a cons if necessary
@@ -201,14 +268,11 @@ fn munch_token(
             b"*" => Token::quantifier(QuantifierType::ZeroOrMore, position),
             b"+" => Token::quantifier(QuantifierType::OneOrMore, position),
             b"?" => Token::quantifier(QuantifierType::ZeroOrOne, position),
-            b"\\" => {
-                new_position += 1;
+            br"\" => {
+                new_position = shift_chars(position, 1);
                 insert_cons(tokens);
-                Token::create_long(
-                    TokenType::Literal(LiteralType::EscapedCharacter),
-                    position,
-                    new_position + 1,
-                )
+                munch_character_class_escape(&input[position..new_position], position)
+                    .unwrap_or(munch_escape_character(position))
             }
             _ => {
                 insert_cons(tokens);
@@ -257,7 +321,7 @@ mod tests {
                 Token::cons(3),
                 Token::create(TokenType::Literal(LiteralType::Character), 3),
                 Token::cons(4),
-                Token::create_long(TokenType::Literal(LiteralType::CharacterClass(true)), 4, 8),
+                Token::create_long(TokenType::Literal(LiteralType::CharacterClass(CharacterClassType::Manual, true)), 4, 8),
                 Token::quantifier(QuantifierType::OneOrMore, 8),
                 Token::cons(9),
                 Token::create(TokenType::Literal(LiteralType::Character), 9),
@@ -273,10 +337,9 @@ mod tests {
                 Token::create(TokenType::Literal(LiteralType::Character), 17),
                 Token::cons(18),
                 Token::create_long(
-                    TokenType::Literal(LiteralType::CharacterClass(false)),
+                    TokenType::Literal(LiteralType::CharacterClass(CharacterClassType::Manual), false)),
                     18,
                     24
-                ),
                 Token::cons(24),
                 Token::open_group(24),
                 Token::create(TokenType::Literal(LiteralType::Character), 25),
