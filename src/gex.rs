@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
-// NOTE: this forces us to use UTF-8
+// NOTE: this actually forces us to use UTF-8
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Rule {
-    Range(u8, u8),
+    Range(u32, u32),
     Null,
 }
 
@@ -190,9 +190,9 @@ impl GexMachine {
     ///
     /// Null transition rules will always evaluate as falsy since they need to be collapsed to next
     /// states without consuming a character, and this is handled separately.
-    fn evaluate_rule(rule: &Rule, given: &u8) -> bool {
+    fn evaluate_rule(rule: &Rule, given: &char) -> bool {
         match rule {
-            Rule::Range(start, end) => start <= given && given <= end,
+            Rule::Range(start, end) => *start <= *given as u32 && *given as u32 <= *end,
             Rule::Null => false, // skip Null bc it will collapse from the previous state
         }
     }
@@ -238,7 +238,7 @@ impl GexMachine {
     fn do_transition(
         &self,
         curr_states: &HashSet<usize>,
-        input_char: &u8,
+        input_char: &char,
         mut accepted: bool,
     ) -> (HashSet<usize>, bool, bool) {
         let mut new_states: HashSet<usize> = HashSet::new();
@@ -276,7 +276,7 @@ impl GexMachine {
     }
 
     /// Searches the input from the beginning, returning a match if one is found.
-    pub fn find(&self, input: &[u8]) -> Option<Match> {
+    pub fn find(&self, input: &str) -> Option<Match> {
         // start state is always the zeroth state
         let mut curr_states = HashSet::from([0]);
         let curr_start = 0;
@@ -295,12 +295,14 @@ impl GexMachine {
 
         accepted = accepted || accepted_via_null;
 
-        for (index, &input_char) in input[curr_start..].iter().enumerate() {
+        for (index, input_char) in input[curr_start..].chars().enumerate() {
+            // for (index, &input_char) in input[curr_start..].iter().enumerate() {
+            let char_len = input_char.len_utf8();
             (curr_states, accepted, consumed_a_character) =
                 self.do_transition(&curr_states, &input_char, accepted);
 
             if consumed_a_character && accepted {
-                candidate.end = Some(index + 1);
+                candidate.end = Some(index + char_len);
             }
 
             if curr_states.len() == 0 {
@@ -352,7 +354,7 @@ impl Match {
 mod tests {
     use super::*;
 
-    fn assert_match(gex_machine: &GexMachine, input: &[u8], match_string: &[u8]) {
+    fn assert_match(gex_machine: &GexMachine, input: &str, match_string: &str) {
         let result = gex_machine.find(input);
 
         assert!(result.is_some());
@@ -360,22 +362,25 @@ mod tests {
         assert_eq!(match_string, &input[result_match.start..result_match.end]);
     }
 
-    fn assert_full_match(gex_machine: &GexMachine, input: &[u8]) {
+    fn assert_full_match(gex_machine: &GexMachine, input: &str) {
         assert_match(gex_machine, input, input);
     }
 
-    fn assert_no_match(gex_machine: &GexMachine, input: &[u8]) {
+    fn assert_no_match(gex_machine: &GexMachine, input: &str) {
         let result = gex_machine.find(input);
 
         println!("{:?}", result);
         assert!(result.is_none());
     }
 
-    fn machine_for(atom: u8) -> GexMachine {
+    fn machine_for(atom: char) -> GexMachine {
         GexMachine {
             states: vec![
                 State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
-                State::from_transitions(vec![(Rule::Range(atom, atom), Next::Target(2))]),
+                State::from_transitions(vec![(
+                    Rule::Range(atom as u32, atom as u32),
+                    Next::Target(2),
+                )]),
                 State::accept_state(),
             ],
         }
@@ -383,90 +388,88 @@ mod tests {
 
     #[test]
     fn test_cons() {
-        let gex_machine = machine_for(b'a')
-            .cons(machine_for(b'b'))
-            .cons(machine_for(b'c'));
+        let gex_machine = machine_for('a')
+            .cons(machine_for('b'))
+            .cons(machine_for('c'));
 
-        assert_full_match(&gex_machine, b"abc");
-        assert_no_match(&gex_machine, b"cba");
+        assert_full_match(&gex_machine, "abc");
+        assert_no_match(&gex_machine, "cba");
     }
 
     #[test]
     fn test_or() {
-        let gex_machine = machine_for(b'a').or(machine_for(b'b'));
+        let gex_machine = machine_for('a').or(machine_for('b'));
 
-        assert_full_match(&gex_machine, b"a");
-        assert_full_match(&gex_machine, b"b");
-        assert_match(&gex_machine, b"aab", b"a");
-        assert_match(&gex_machine, b"bab", b"b");
-        assert_match(&gex_machine, b"babdef", b"b");
-        assert_no_match(&gex_machine, b"c");
-        assert_no_match(&gex_machine, b"cdef");
+        assert_full_match(&gex_machine, "a");
+        assert_full_match(&gex_machine, "b");
+        assert_match(&gex_machine, "aab", "a");
+        assert_match(&gex_machine, "bab", "b");
+        assert_match(&gex_machine, "babdef", "b");
+        assert_no_match(&gex_machine, "c");
+        assert_no_match(&gex_machine, "cdef");
     }
 
     #[test]
     fn test_zero_or_more() {
-        let gex_machine = machine_for(b'a').zero_or_more();
-        assert_full_match(&gex_machine, b"a");
-        assert_full_match(&gex_machine, b"");
-        assert_full_match(&gex_machine, b"aa");
-        assert_full_match(&gex_machine, b"aaaaa");
-        assert_match(&gex_machine, b"aab", b"aa");
-        assert_match(&gex_machine, b"baaaaa", b"");
-        assert_match(&gex_machine, b"c", b"");
+        let gex_machine = machine_for('a').zero_or_more();
+        assert_full_match(&gex_machine, "a");
+        assert_full_match(&gex_machine, "");
+        assert_full_match(&gex_machine, "aa");
+        assert_full_match(&gex_machine, "aaaaa");
+        assert_match(&gex_machine, "aab", "aa");
+        assert_match(&gex_machine, "baaaaa", "");
+        assert_match(&gex_machine, "c", "");
     }
 
     #[test]
     fn test_zero_or_one() {
-        let gex_machine = machine_for(b'a').zero_or_one();
+        let gex_machine = machine_for('a').zero_or_one();
 
-        assert_full_match(&gex_machine, b"a");
-        assert_full_match(&gex_machine, b"");
-        assert_match(&gex_machine, b"aa", b"a");
-        assert_match(&gex_machine, b"aaaaa", b"a");
-        assert_match(&gex_machine, b"aab", b"a");
-        assert_match(&gex_machine, b"baaaaa", b"");
-        assert_match(&gex_machine, b"c", b"");
+        assert_full_match(&gex_machine, "a");
+        assert_full_match(&gex_machine, "");
+        assert_match(&gex_machine, "aa", "a");
+        assert_match(&gex_machine, "aaaaa", "a");
+        assert_match(&gex_machine, "aab", "a");
+        assert_match(&gex_machine, "baaaaa", "");
+        assert_match(&gex_machine, "c", "");
     }
 
     #[test]
     fn test_one_or_more() {
-        let gex_machine = machine_for(b'a').one_or_more();
+        let gex_machine = machine_for('a').one_or_more();
 
-        assert_full_match(&gex_machine, b"a");
-        assert_full_match(&gex_machine, b"aa");
-        assert_full_match(&gex_machine, b"aaaaa");
-        assert_match(&gex_machine, b"aab", b"aa");
-        assert_no_match(&gex_machine, b"baaaaa");
-        assert_no_match(&gex_machine, b"");
+        assert_full_match(&gex_machine, "a");
+        assert_full_match(&gex_machine, "aa");
+        assert_full_match(&gex_machine, "aaaaa");
+        assert_match(&gex_machine, "aab", "aa");
+        assert_no_match(&gex_machine, "baaaaa");
+        assert_no_match(&gex_machine, "");
     }
 
     #[test]
     fn test_multiple_alternation() {
-        let gex_machine = machine_for(b'a' as u8)
-            .or(machine_for(b'b' as u8))
-            .or(machine_for(b'c' as u8));
+        let gex_machine = machine_for('a').or(machine_for('b')).or(machine_for('c'));
 
-        assert_full_match(&gex_machine, b"a");
-        assert_full_match(&gex_machine, b"b");
-        assert_full_match(&gex_machine, b"c");
-        assert_no_match(&gex_machine, b"d");
+        assert_full_match(&gex_machine, "a");
+        assert_full_match(&gex_machine, "b");
+        assert_full_match(&gex_machine, "c");
+        assert_no_match(&gex_machine, "d");
     }
 
     #[test]
     fn test_complex_composition() {
         // pattern: `(a|b)+ca?b*`
-        let gex_machine = machine_for(b'a' as u8)
-            .or(machine_for(b'b' as u8))
+        let gex_machine = machine_for('a')
+            .or(machine_for('b'))
             .one_or_more()
-            .cons(machine_for(b'c' as u8))
-            .cons(machine_for(b'a' as u8).zero_or_one())
-            .cons(machine_for(b'b' as u8).zero_or_more());
+            .cons(machine_for('c'))
+            .cons(machine_for('a').zero_or_one())
+            .cons(machine_for('b').zero_or_more());
 
-        assert_full_match(&gex_machine, b"ac");
-        assert_full_match(&gex_machine, b"bc");
-        assert_full_match(&gex_machine, b"abbacabb");
-        assert_full_match(&gex_machine, b"bcbbbb");
-        assert_full_match(&gex_machine, b"baaaabcabbbb");
+        assert_full_match(&gex_machine, "ac");
+        assert_full_match(&gex_machine, "bc");
+        assert_full_match(&gex_machine, "abbacabb");
+        assert_full_match(&gex_machine, "bcbbbb");
+        assert_full_match(&gex_machine, "baaaabcabbbb");
     }
 }
