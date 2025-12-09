@@ -1,14 +1,9 @@
 // todo: tokenizer
 // input pattern -> tokens -> parse? into NFA
 // TODO: visualize!
+use std::iter::Peekable;
 use std::ops::Range;
-
-// If I want to try supporting UTF-16 etc.
-const CHAR_WIDTH: usize = 1;
-
-fn shift_chars(position: usize, shift: usize) -> usize {
-    position + shift * CHAR_WIDTH
-}
+use std::str::Chars;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum QuantifierType {
@@ -164,74 +159,108 @@ impl Token {
 // | 8 | Alternation                       | |                    |
 // +---+-----------------------------------+----------------------+
 
-fn munch_character_class(input: &[u8], position: usize) -> (Token, usize) {
-    let remaining_input = &input[position + 1..];
-    let mut found: Option<usize> = None;
+fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize) -> (Token, usize) {
+    // TODO: evaluate this, as this choice might result in some WEIRD bugs
+    let mut previous_char = '\0';
+    let mut inverted = false;
+    // start at first char
+    let mut next_position = position + 1;
+    println!("start: {}", position);
+
+    // println!("peek 1: {:?}", remaining_chars.peek());
+    // println!("next 1: {:?}", remaining_chars.next());
+    // println!("peek 2: {:?}", remaining_chars.peek());
+    // println!("next 2: {:?}", remaining_chars.next())
+
     // TODO: test case for failure where there is not another character
-    for index in 0..remaining_input.len() {
-        if &remaining_input[index..index + 1] == b"]" && &remaining_input[index - 1..index] != br"\"
-        {
-            found = Some(position + index + 1);
-            break;
+    // println!("remaining chars before peek: {:?}", remaining_chars);
+    if let Some(&'^') = remaining_chars.peek() {
+        inverted = true;
+        println!("move to: {:?}", remaining_chars.next());
+        // println!("peeked: {:?}", remaining_chars.peek());
+        next_position += 1;
+        println!("chars start: {}", next_position);
+    }
+    // println!("remaining chars after peek: {:?}", remaining_chars);
+
+    println!("before loop: {}", next_position);
+    for remaining_char in remaining_chars {
+        println!("loop entry: {}", remaining_char);
+        if remaining_char == ']' && previous_char != '\\' {
+            println!("class end: {}", next_position);
+            let token = Token::create_long(
+                TokenType::Literal(LiteralType::CharacterClass(
+                    CharacterClassType::Manual,
+                    !inverted,
+                )),
+                position,
+                // TODO: is this the problem?
+                next_position + 1,
+            );
+
+            return (token, next_position); // + 1);
         }
+        next_position += 1;
+        println!("next: {}", next_position);
+        previous_char = remaining_char;
     }
 
-    if let Some(close_bracket_position) = found {
-        let positive_match = &remaining_input[0..1] != b"^";
-        let token = Token::create_long(
-            TokenType::Literal(LiteralType::CharacterClass(
-                CharacterClassType::Manual,
-                positive_match,
-            )),
-            position,
-            close_bracket_position + 1, // need the position AFTER the ] k
-        );
-
-        (token, close_bracket_position)
-    } else {
-        // TODO: add error reporting module
-        panic!("Unterminated character set at {}", position);
-    }
+    // TODO: add error reporting module
+    panic!("Unterminated character set at {}", position);
 }
 
-fn munch_character_class_escape(input: &[u8], position: usize) -> Option<Token> {
-    let end_position = shift_chars(position, 2);
-    match input {
-        br"\s" | br"\S" => Some(Token::create_long(
+fn munch_character_class_escape(
+    remaining_chars: &mut Peekable<Chars>,
+    position: usize,
+) -> Option<Token> {
+    let end_position = position + 2;
+    // TODO: is this a good error? Should this error happen? Is an \ at the end of a string OK?
+    let next_character = remaining_chars
+        .peek()
+        .unwrap_or_else(|| panic!("Unclosed escape sequence at {}", position));
+
+    let character_class_escape_token = match next_character {
+        's' | 'S' => Some(Token::create_long(
             TokenType::Literal(LiteralType::CharacterClass(
                 CharacterClassType::Whitespace,
-                input == br"\s",
+                *next_character == 's',
             )),
             position,
             end_position,
         )),
-        br"\w" | br"\W" => Some(Token::create_long(
+        'w' | 'W' => Some(Token::create_long(
             TokenType::Literal(LiteralType::CharacterClass(
                 CharacterClassType::Word,
-                input == br"\w",
+                *next_character == 'w',
             )),
             position,
             end_position,
         )),
-        br"\d" | br"\D" => Some(Token::create_long(
+        'd' | 'D' => Some(Token::create_long(
             TokenType::Literal(LiteralType::CharacterClass(
                 CharacterClassType::Digit,
-                input == br"\d",
+                *next_character == 'd',
             )),
             position,
             end_position,
         )),
         _ => None,
+    };
+
+    if let Some(_) = character_class_escape_token {
+        remaining_chars.next();
     }
+    character_class_escape_token
 }
 
-fn munch_escape_character(position: usize) -> Token {
+fn munch_escape_character(remaining_chars: &mut Peekable<Chars>, position: usize) -> Token {
     // supports arbitrary escape characters, but also gives me flexibility to add word boundary
     // support in the future, etc. etc.
+    remaining_chars.next();
     Token::create_long(
         TokenType::Literal(LiteralType::EscapedCharacter),
         position,
-        shift_chars(position, 2),
+        position + 2,
     )
 }
 
@@ -245,37 +274,38 @@ fn insert_cons(tokens: &mut Vec<Token>) {
 }
 
 fn munch_token(
-    input: &[u8],
-    character: &[u8],
+    remaining_chars: &mut Peekable<Chars>,
+    character: &char,
     position: usize,
     tokens: &mut Vec<Token>,
 ) -> (Token, usize) {
     let mut new_position = position;
     (
         match character {
-            b"(" => {
+            '(' => {
                 insert_cons(tokens);
                 Token::open_group(position)
             }
-            b")" => Token::close_group(position),
-            b"[" => {
+            ')' => Token::close_group(position),
+            '[' => {
                 insert_cons(tokens);
-                let (token, end_char_class) = munch_character_class(input, position);
+                let (token, end_char_class) = munch_character_class(remaining_chars, position);
                 new_position = end_char_class;
                 token
             }
-            b"|" => Token::create(TokenType::Alternation, position),
-            b"*" => Token::quantifier(QuantifierType::ZeroOrMore, position),
-            b"+" => Token::quantifier(QuantifierType::OneOrMore, position),
-            b"?" => Token::quantifier(QuantifierType::ZeroOrOne, position),
-            br"\" => {
-                new_position = shift_chars(position, 1);
+            '|' => Token::create(TokenType::Alternation, position),
+            '*' => Token::quantifier(QuantifierType::ZeroOrMore, position),
+            '+' => Token::quantifier(QuantifierType::OneOrMore, position),
+            '?' => Token::quantifier(QuantifierType::ZeroOrOne, position),
+            '\\' => {
+                new_position = position + 1;
                 insert_cons(tokens);
-                munch_character_class_escape(&input[position..new_position], position)
-                    .unwrap_or(munch_escape_character(position))
+                munch_character_class_escape(remaining_chars, position)
+                    .unwrap_or(munch_escape_character(remaining_chars, position))
             }
             _ => {
                 insert_cons(tokens);
+                println!("pos: {} ; character: {}", position, character);
                 Token::create(TokenType::Literal(LiteralType::Character), position)
             }
         },
@@ -283,14 +313,20 @@ fn munch_token(
     )
 }
 
-pub fn tokenize(input: &[u8]) -> Vec<Token> {
+// TODO: having a type Tokenization supporting .add(Token) would
+// make the `insert_cons` logic simpler, since it could happen just there
+
+pub fn tokenize(in_str: &str) -> Vec<Token> {
     let mut position = 0;
     let mut tokens = Vec::new();
-    let num_chars = input.len();
+    let mut remaining_chars = in_str.chars().peekable();
 
-    while position < num_chars {
+    // TODO: determine if this could just be a for loop since the next calls would also affect one
+    // of those
+    while let Some(current_char) = remaining_chars.next() {
         let (token, new_position) =
-            munch_token(input, &input[position..position + 1], position, &mut tokens);
+            munch_token(&mut remaining_chars, &current_char, position, &mut tokens);
+        // TODO: the problem might be here
         position = new_position + 1;
         tokens.push(token);
     }
@@ -305,7 +341,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Unterminated character set at 3")]
     fn test_bad_character_class() {
-        tokenize(br"123[fdhk\]dfsdf");
+        tokenize(r"123[fdhk\]dfsdf");
     }
 
     #[test]
@@ -364,7 +400,7 @@ mod tests {
                 Token::cons(30),
                 Token::create(TokenType::Literal(LiteralType::Character), 30),
             ],
-            tokenize(b"abce[fg]+h*|i?j\\kl[^a-c](abcd)i")
+            tokenize(r"abce[fg]+h*|i?j\kl[^a-c](abcd)i")
         )
     }
 }
