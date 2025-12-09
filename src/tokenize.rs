@@ -49,6 +49,7 @@ pub enum TokenType {
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Token {
     pub kind: TokenType,
+    /// Byte span of the token in the source string.
     pub position: (usize, usize),
     pub flags: u8,
 }
@@ -159,13 +160,14 @@ impl Token {
 // | 8 | Alternation                       | |                    |
 // +---+-----------------------------------+----------------------+
 
-fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize) -> (Token, usize) {
+fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize) -> Token {
     // TODO: evaluate this, as this choice might result in some WEIRD bugs
     let mut previous_char = '\0';
     let mut inverted = false;
     // start at first char
-    let mut next_position = position + 1;
     println!("start: {}", position);
+
+    let mut next_position = position + '['.len_utf8();
 
     // println!("peek 1: {:?}", remaining_chars.peek());
     // println!("next 1: {:?}", remaining_chars.next());
@@ -178,7 +180,7 @@ fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize)
         inverted = true;
         println!("move to: {:?}", remaining_chars.next());
         // println!("peeked: {:?}", remaining_chars.peek());
-        next_position += 1;
+        next_position += '^'.len_utf8();
         println!("chars start: {}", next_position);
     }
     // println!("remaining chars after peek: {:?}", remaining_chars);
@@ -195,12 +197,12 @@ fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize)
                 )),
                 position,
                 // TODO: is this the problem?
-                next_position + 1,
+                next_position + remaining_char.len_utf8(),
             );
 
-            return (token, next_position); // + 1);
+            return token;
         }
-        next_position += 1;
+        next_position += remaining_char.len_utf8();
         println!("next: {}", next_position);
         previous_char = remaining_char;
     }
@@ -213,11 +215,13 @@ fn munch_character_class_escape(
     remaining_chars: &mut Peekable<Chars>,
     position: usize,
 ) -> Option<Token> {
-    let end_position = position + 2;
     // TODO: is this a good error? Should this error happen? Is an \ at the end of a string OK?
     let next_character = remaining_chars
         .peek()
         .unwrap_or_else(|| panic!("Unclosed escape sequence at {}", position));
+
+    let end_position = position + '\\'.len_utf8() + next_character.len_utf8();
+    println!("END position: {}", end_position);
 
     let character_class_escape_token = match next_character {
         's' | 'S' => Some(Token::create_long(
@@ -256,11 +260,14 @@ fn munch_character_class_escape(
 fn munch_escape_character(remaining_chars: &mut Peekable<Chars>, position: usize) -> Token {
     // supports arbitrary escape characters, but also gives me flexibility to add word boundary
     // support in the future, etc. etc.
-    remaining_chars.next();
+    let remaining_char = remaining_chars
+        .next()
+        .unwrap_or_else(|| panic!("Unclosed escape character at {}", position));
+
     Token::create_long(
         TokenType::Literal(LiteralType::EscapedCharacter),
         position,
-        position + 2,
+        position + '\\'.len_utf8() + remaining_char.len_utf8(),
     )
 }
 
@@ -278,39 +285,32 @@ fn munch_token(
     character: &char,
     position: usize,
     tokens: &mut Vec<Token>,
-) -> (Token, usize) {
-    let mut new_position = position;
-    (
-        match character {
-            '(' => {
-                insert_cons(tokens);
-                Token::open_group(position)
-            }
-            ')' => Token::close_group(position),
-            '[' => {
-                insert_cons(tokens);
-                let (token, end_char_class) = munch_character_class(remaining_chars, position);
-                new_position = end_char_class;
-                token
-            }
-            '|' => Token::create(TokenType::Alternation, position),
-            '*' => Token::quantifier(QuantifierType::ZeroOrMore, position),
-            '+' => Token::quantifier(QuantifierType::OneOrMore, position),
-            '?' => Token::quantifier(QuantifierType::ZeroOrOne, position),
-            '\\' => {
-                new_position = position + 1;
-                insert_cons(tokens);
-                munch_character_class_escape(remaining_chars, position)
-                    .unwrap_or(munch_escape_character(remaining_chars, position))
-            }
-            _ => {
-                insert_cons(tokens);
-                println!("pos: {} ; character: {}", position, character);
-                Token::create(TokenType::Literal(LiteralType::Character), position)
-            }
-        },
-        new_position,
-    )
+) -> Token {
+    match character {
+        '(' => {
+            insert_cons(tokens);
+            Token::open_group(position)
+        }
+        ')' => Token::close_group(position),
+        '[' => {
+            insert_cons(tokens);
+            munch_character_class(remaining_chars, position)
+        }
+        '|' => Token::create(TokenType::Alternation, position),
+        '*' => Token::quantifier(QuantifierType::ZeroOrMore, position),
+        '+' => Token::quantifier(QuantifierType::OneOrMore, position),
+        '?' => Token::quantifier(QuantifierType::ZeroOrOne, position),
+        '\\' => {
+            insert_cons(tokens);
+            munch_character_class_escape(remaining_chars, position)
+                .unwrap_or(munch_escape_character(remaining_chars, position))
+        }
+        _ => {
+            insert_cons(tokens);
+            println!("pos: {} ; character: {}", position, character);
+            Token::create(TokenType::Literal(LiteralType::Character), position)
+        }
+    }
 }
 
 // TODO: having a type Tokenization supporting .add(Token) would
@@ -324,10 +324,10 @@ pub fn tokenize(in_str: &str) -> Vec<Token> {
     // TODO: determine if this could just be a for loop since the next calls would also affect one
     // of those
     while let Some(current_char) = remaining_chars.next() {
-        let (token, new_position) =
-            munch_token(&mut remaining_chars, &current_char, position, &mut tokens);
+        let token = munch_token(&mut remaining_chars, &current_char, position, &mut tokens);
         // TODO: the problem might be here
-        position = new_position + 1;
+        position = token.position.1; // new_position + current_char.len_utf8();
+        println!("NEW position: {}; token {:?}", position, token);
         tokens.push(token);
     }
 
