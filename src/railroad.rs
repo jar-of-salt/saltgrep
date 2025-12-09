@@ -217,59 +217,59 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_begins_with_quantifier() {
-        Ast::from_tokens(tokenize::tokenize(b"*abcd"));
+        Ast::from_tokens(tokenize::tokenize("*abcd"));
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_quantifier_on_open_group() {
-        Ast::from_tokens(tokenize::tokenize(b"abcd(*abcd)"));
+        Ast::from_tokens(tokenize::tokenize("abcd(*abcd)"));
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_no_close_group() {
-        Ast::from_tokens(tokenize::tokenize(b"abcd(*abcd(abcde?fg+)?"));
+        Ast::from_tokens(tokenize::tokenize("abcd(*abcd(abcde?fg+)?"));
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_no_open_group() {
-        Ast::from_tokens(tokenize::tokenize(b"abcd*abcd(abcde)?fg+)?"));
+        Ast::from_tokens(tokenize::tokenize("abcd*abcd(abcde)?fg+)?"));
     }
 
     #[test]
     fn test_empty_group() {
-        Ast::from_tokens(tokenize::tokenize(b"()"));
+        Ast::from_tokens(tokenize::tokenize("()"));
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_double_alternation() {
-        Ast::from_tokens(tokenize::tokenize(b"a||"));
+        Ast::from_tokens(tokenize::tokenize("a||"));
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_no_rhs_alternation() {
-        Ast::from_tokens(tokenize::tokenize(b"c|"));
+        Ast::from_tokens(tokenize::tokenize("c|"));
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_no_lhs_alternation() {
-        Ast::from_tokens(tokenize::tokenize(b"|c"));
+        Ast::from_tokens(tokenize::tokenize("|c"));
     }
 
     #[test]
     fn test_pointless_equivalence() {
-        let tokens = tokenize::tokenize(b"a|b|c");
+        let tokens = tokenize::tokenize("a|b|c");
         assert_eq!(
             Ast::from_tokens(tokens.clone()),
             Ast::railroad(tokens.clone())
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn test_alternation_associativity() {
-        let tokens = tokenize::tokenize(b"a|b|c");
+        let tokens = tokenize::tokenize("a|b|c");
 
         assert_eq!("0..1 2..3 | 4..5 |", Ast::railroad(tokens).to_string());
     }
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn test_cons_associativity() {
         // Pseudo-pattern: 1|2|3
-        let tokens = tokenize::tokenize(b"abc");
+        let tokens = tokenize::tokenize("abc");
 
         assert_eq!("0..1 1..2 J 2..3 J", Ast::from_tokens(tokens).to_string());
     }
@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn test_mixed_pattern_1() {
         // Pseudo-pattern: (12+34)5|6*
-        let tokens = tokenize::tokenize(b"(ab+34)5|6*");
+        let tokens = tokenize::tokenize("(ab+34)5|6*");
 
         assert_eq!(
             "1..2 2..3 + J 4..5 J 5..6 J G 7..8 J 9..10 * |",
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_mixed_pattern_2() {
-        let tokens = tokenize::tokenize(b"(ab+(cd)*e(f(g)h))i?|(j(k(l|m|n)))");
+        let tokens = tokenize::tokenize("(ab+(cd)*e(f(g)h))i?|(j(k(l|m|n)))");
         assert_eq!(
             "1..2 2..3 + J 5..6 6..7 J G * J 9..10 J 11..12 13..14 G J 15..16 J G J G 18..19 ? J 22..23 24..25 26..27 28..29 | 30..31 | G J G J G |",
             Ast::from_tokens(tokens).to_string()
