@@ -2,8 +2,11 @@ use crate::gex::{GexMachine, Next, Rule, State};
 use crate::railroad::{Ast, AstNode};
 use crate::tokenize::{tokenize, QuantifierType, Token};
 
-fn machine_for(token: Token, input: &[u8]) -> GexMachine {
-    let range_value = input[token.input_range()][0];
+fn machine_for(token: Token, input: &str) -> GexMachine {
+    let range_value = input[token.input_range()]
+        .chars()
+        .next()
+        .expect("Invalid input") as u32;
     return GexMachine {
         states: vec![
             State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
@@ -18,7 +21,7 @@ fn machine_for(token: Token, input: &[u8]) -> GexMachine {
 
 // NOTE: maybe it would have been easier to figure out token/astnode type layout by writing this
 // first??
-pub fn compile(input: &[u8]) -> GexMachine {
+pub fn compile(input: &str) -> GexMachine {
     let tokens = tokenize(input);
     let ast = Ast::from_tokens(tokens);
 
@@ -78,6 +81,6 @@ mod tests {
 
     #[test]
     fn test_nfa() {
-        assert!(compile(br"abcd+(efg)|i").find(br"i").is_some());
+        assert!(compile(r"abcd+(efg)|i").find(r"i").is_some());
     }
 }
