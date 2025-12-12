@@ -217,8 +217,10 @@ impl GexMachine {
             visited.insert(last_state);
 
             if let Some(state) = self.states.get(last_state) {
+                let mut curr_state_collapsed = false;
                 for (rule, transition) in state.transitions.iter() {
                     if let Rule::Null = rule {
+                        curr_state_collapsed = true;
                         match transition {
                             Next::Target(next) => {
                                 collapsed_states.insert(*next);
@@ -228,6 +230,9 @@ impl GexMachine {
                             Next::Accept => accept = true,
                         }
                     }
+                }
+                if curr_state_collapsed {
+                    collapsed_states.remove(&last_state);
                 }
             }
         }
@@ -268,6 +273,8 @@ impl GexMachine {
         // handle Null states, as they should not consume a character
         let (new_states, accepted_via_null) = self.collapse_null_transitions(new_states);
 
+        println!("new_states: {:?}", new_states);
+
         (
             new_states,
             accepted || accepted_via_null,
@@ -295,11 +302,17 @@ impl GexMachine {
 
         accepted = accepted || accepted_via_null;
 
+        println!("curr states: {:?}", curr_states);
         for (index, input_char) in input[curr_start..].chars().enumerate() {
             // for (index, &input_char) in input[curr_start..].iter().enumerate() {
             let char_len = input_char.len_utf8();
             (curr_states, accepted, consumed_a_character) =
                 self.do_transition(&curr_states, &input_char, accepted);
+
+            println!(
+                "curr states: {:?} ;; consumed: {:?}",
+                curr_states, consumed_a_character
+            );
 
             if consumed_a_character && accepted {
                 candidate.end = Some(index + char_len);
