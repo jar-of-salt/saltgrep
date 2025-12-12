@@ -165,31 +165,18 @@ fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize)
     let mut previous_char = '\0';
     let mut inverted = false;
     // start at first char
-    println!("start: {}", position);
 
     let mut next_position = position + '['.len_utf8();
 
-    // println!("peek 1: {:?}", remaining_chars.peek());
-    // println!("next 1: {:?}", remaining_chars.next());
-    // println!("peek 2: {:?}", remaining_chars.peek());
-    // println!("next 2: {:?}", remaining_chars.next())
-
     // TODO: test case for failure where there is not another character
-    // println!("remaining chars before peek: {:?}", remaining_chars);
     if let Some(&'^') = remaining_chars.peek() {
         inverted = true;
-        println!("move to: {:?}", remaining_chars.next());
-        // println!("peeked: {:?}", remaining_chars.peek());
+        remaining_chars.next();
         next_position += '^'.len_utf8();
-        println!("chars start: {}", next_position);
     }
-    // println!("remaining chars after peek: {:?}", remaining_chars);
 
-    println!("before loop: {}", next_position);
     for remaining_char in remaining_chars {
-        println!("loop entry: {}", remaining_char);
         if remaining_char == ']' && previous_char != '\\' {
-            println!("class end: {}", next_position);
             let token = Token::create_long(
                 TokenType::Literal(LiteralType::CharacterClass(
                     CharacterClassType::Manual,
@@ -203,7 +190,6 @@ fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize)
             return token;
         }
         next_position += remaining_char.len_utf8();
-        println!("next: {}", next_position);
         previous_char = remaining_char;
     }
 
@@ -221,7 +207,6 @@ fn munch_character_class_escape(
         .unwrap_or_else(|| panic!("Unclosed escape sequence at {}", position));
 
     let end_position = position + '\\'.len_utf8() + next_character.len_utf8();
-    println!("END position: {}", end_position);
 
     let character_class_escape_token = match next_character {
         's' | 'S' => Some(Token::create_long(
@@ -305,9 +290,12 @@ fn munch_token(
             munch_character_class_escape(remaining_chars, position)
                 .unwrap_or(munch_escape_character(remaining_chars, position))
         }
+        '.' => {
+            insert_cons(tokens);
+            Token::create(TokenType::Literal(LiteralType::Wildcard), position)
+        }
         _ => {
             insert_cons(tokens);
-            println!("pos: {} ; character: {}", position, character);
             Token::create(TokenType::Literal(LiteralType::Character), position)
         }
     }
@@ -327,7 +315,6 @@ pub fn tokenize(in_str: &str) -> Vec<Token> {
         let token = munch_token(&mut remaining_chars, &current_char, position, &mut tokens);
         // TODO: the problem might be here
         position = token.position.1; // new_position + current_char.len_utf8();
-        println!("NEW position: {}; token {:?}", position, token);
         tokens.push(token);
     }
 
