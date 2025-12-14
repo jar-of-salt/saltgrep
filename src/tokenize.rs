@@ -288,7 +288,7 @@ fn munch_token(
         '\\' => {
             insert_cons(tokens);
             munch_character_class_escape(remaining_chars, position)
-                .unwrap_or(munch_escape_character(remaining_chars, position))
+                .unwrap_or_else(|| munch_escape_character(remaining_chars, position))
         }
         '.' => {
             insert_cons(tokens);
