@@ -1,6 +1,6 @@
 use crate::gex::{GexMachine, Next, Rule, State};
 use crate::railroad::{Ast, AstNode};
-use crate::tokenize::{tokenize, LiteralType, QuantifierType, Token};
+use crate::tokenize::{tokenize, CharacterClassType, LiteralType, QuantifierType, Token};
 
 fn machine_for(token: Token, input: &str) -> GexMachine {
     let range_value = input[token.input_range()]
@@ -33,6 +33,45 @@ fn wildcard_machine() -> GexMachine {
     };
 }
 
+fn word_char_machine(positive: bool) -> GexMachine {
+    let mut machine = GexMachine {
+        states: vec![
+            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
+            State::from_transitions(vec![
+                (Rule::IsAlphabetic(positive), Next::Target(2)),
+                (Rule::IsDigit(positive), Next::Target(2)),
+            ]),
+            State::accept_state(),
+        ],
+    };
+
+    if positive {
+        machine.states[1].push((Rule::Range('_' as u32, '_' as u32), Next::Target(2)));
+    }
+
+    machine
+}
+
+fn digit_char_machine(positive: bool) -> GexMachine {
+    return GexMachine {
+        states: vec![
+            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
+            State::from_transitions(vec![(Rule::IsDigit(positive), Next::Target(2))]),
+            State::accept_state(),
+        ],
+    };
+}
+
+fn whitespace_char_machine(positive: bool) -> GexMachine {
+    return GexMachine {
+        states: vec![
+            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
+            State::from_transitions(vec![(Rule::IsWhitespace(positive), Next::Target(2))]),
+            State::accept_state(),
+        ],
+    };
+}
+
 // NOTE: maybe it would have been easier to figure out token/astnode type layout by writing this
 // first??
 pub fn compile(input: &str) -> GexMachine {
@@ -57,7 +96,14 @@ pub fn compile(input: &str) -> GexMachine {
                     combination_stack.push(machine_for_character(escaped));
                 }
                 LiteralType::CharacterClass(class_type, positive) => {
-                    panic!("Character classes not implemented")
+                    println!("positive: {}", *positive);
+                    let class_machine = match class_type {
+                        CharacterClassType::Word => word_char_machine(*positive),
+                        CharacterClassType::Digit => digit_char_machine(*positive),
+                        CharacterClassType::Whitespace => whitespace_char_machine(*positive),
+                        _ => panic!("unimplemented"),
+                    };
+                    combination_stack.push(class_machine);
                 }
                 LiteralType::EmptyString => panic!("Empty string not implemented"),
             },
@@ -116,5 +162,30 @@ mod tests {
     fn test_exotic_cases() {
         println!("machine: {:?}", compile(r"ab\c.d+(efg)|i"));
         assert!(compile(r"ab\c.d+(efg)|i").find(r"abcxdddefg").is_some());
+    }
+
+    #[test]
+    fn test_word_char_class() {
+        assert!(compile(r"\w").find(r"-").is_none());
+        assert!(compile(r"\w").find(r"a").is_some());
+        assert!(compile(r"\w+").find(r"abfhkg10235_1204").is_some());
+
+        assert!(compile(r"\W").find(r"&").is_some());
+    }
+
+    #[test]
+    fn test_digit_char_class() {
+        assert!(compile(r"\d").find(r"0").is_some());
+        assert!(compile(r"\d+").find(r"1234567890").is_some());
+
+        assert!(compile(r"\D").find(r"a").is_some());
+    }
+
+    #[test]
+    fn test_whitespace_char_class() {
+        assert!(compile(r"\s").find(r" ").is_some());
+        assert!(compile(r"\s+").find(" \n").is_some());
+
+        assert!(compile(r"\S").find(r"a").is_some());
     }
 }
