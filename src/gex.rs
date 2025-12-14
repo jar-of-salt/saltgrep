@@ -4,6 +4,9 @@ use std::collections::HashSet;
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Rule {
     Range(u32, u32),
+    IsAlphabetic(bool),
+    IsDigit(bool),
+    IsWhitespace(bool),
     Null,
 }
 
@@ -89,6 +92,7 @@ impl GexMachine {
 
     /// Concatenate the current NFA with another.
     /// The other NFA will be appended to the receiver.
+    /// TODO: improve this so the current accept state doesn't become a null transition
     pub fn cons(mut self, other: GexMachine) -> GexMachine {
         let old_accept_idx = self.size() - 1;
         // IMPORTANT Assumption: the last state always contains a singular Accept
@@ -193,6 +197,9 @@ impl GexMachine {
     fn evaluate_rule(rule: &Rule, given: &char) -> bool {
         match rule {
             Rule::Range(start, end) => *start <= *given as u32 && *given as u32 <= *end,
+            Rule::IsAlphabetic(positive) => given.is_alphabetic() ^ !positive,
+            Rule::IsDigit(positive) => given.is_numeric() ^ !positive,
+            Rule::IsWhitespace(positive) => given.is_whitespace() ^ !positive,
             Rule::Null => false, // skip Null bc it will collapse from the previous state
         }
     }
