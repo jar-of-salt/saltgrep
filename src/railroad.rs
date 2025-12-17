@@ -1,4 +1,5 @@
-use crate::tokenize::{Arity, LiteralType, QuantifierType, Token, TokenType};
+use crate::operators::{Arity, Operator};
+use crate::tokenize::{LiteralType, QuantifierType, Token, TokenType};
 
 #[derive(Debug, PartialEq)]
 pub struct AstRef(u32);
@@ -178,6 +179,7 @@ fn get_operator_node(op_token: Token, out_stack: &mut Vec<AstRef>) -> AstNode {
             op_token.start(),
             op_token.kind
         ),
+        _ => panic!("Unsupported operator arity at {}", op_token.start()),
     }
 }
 
