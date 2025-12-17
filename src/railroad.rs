@@ -241,6 +241,7 @@ mod tests {
         Ast::from_tokens(tokenize::tokenize("abcd*abcd(abcde)?fg+)?"));
     }
 
+    // TODO: make sure gex can match empty string
     #[test]
     fn test_empty_group() {
         Ast::from_tokens(tokenize::tokenize("()"));
