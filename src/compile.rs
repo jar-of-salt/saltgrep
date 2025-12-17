@@ -277,8 +277,6 @@ mod tests {
         assert!(compile(r"[^a-z]").find(r"A").is_some());
         assert!(compile(r"[^a-zA-Z]").find(r"5").is_some());
 
-        println!("{:?}", compile(r"[^a-zA-Z]"));
-        println!("{:?}", compile(r"[^abc]").find(r"c"));
         assert!(compile(r"[^abc]").find(r"c").is_none());
         assert!(compile(r"[^a-z]").find(r"a").is_none());
         assert!(compile(r"[^a-zA-Z]").find(r"X").is_none());
