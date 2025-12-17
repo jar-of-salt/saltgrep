@@ -3,5 +3,6 @@
 // pub mod regex;
 pub mod compile;
 pub mod gex;
+pub mod operators;
 pub mod railroad;
 pub mod tokenize;
