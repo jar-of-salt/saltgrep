@@ -1,6 +1,7 @@
 // todo: tokenizer
 // input pattern -> tokens -> parse? into NFA
 // TODO: visualize!
+use crate::operators::{Arity, Operator};
 use std::iter::Peekable;
 use std::ops::Range;
 use std::str::Chars;
@@ -59,12 +60,6 @@ fn should_join_literals(token: &Token) -> bool {
         TokenType::CloseGroup | TokenType::Quantifier(_) | TokenType::Literal(_) => true,
         _ => false,
     }
-}
-
-pub enum Arity {
-    Binary,
-    Unary,
-    NoOp,
 }
 
 impl Token {
@@ -137,8 +132,10 @@ impl Token {
     pub fn same_precedence_as(&self, other: &Self) -> bool {
         self.get_precedence() == other.get_precedence()
     }
+}
 
-    pub fn arity(&self) -> Arity {
+impl Operator for Token {
+    fn arity(&self) -> Arity {
         match self.kind {
             TokenType::Quantifier(_) | TokenType::CloseGroup => Arity::Unary,
             TokenType::Cons | TokenType::Alternation => Arity::Binary,
