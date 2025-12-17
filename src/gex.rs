@@ -3,7 +3,7 @@ use std::collections::HashSet;
 // NOTE: this actually forces us to use UTF-8
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Rule {
-    Range(u32, u32),
+    Range(u32, u32, bool),
     IsAlphabetic(bool),
     IsDigit(bool),
     IsWhitespace(bool),
@@ -24,16 +24,30 @@ pub type Transition = (Rule, Next);
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
     pub transitions: Vec<Transition>,
+    /// `true` indicates that a single falsy rule in the transitions should cause all other
+    /// potential rules in this state to evaluate as falsy.
+    pub short_circuit: bool,
 }
 
 impl State {
     pub fn from_transitions(transitions: Vec<Transition>) -> Self {
-        State { transitions }
+        State {
+            transitions,
+            short_circuit: false,
+        }
+    }
+
+    pub fn short_circuit_from_transitions(transitions: Vec<Transition>) -> Self {
+        State {
+            transitions,
+            short_circuit: true,
+        }
     }
 
     pub fn accept_state() -> Self {
         State {
             transitions: vec![(Rule::Null, Next::Accept)],
+            short_circuit: false,
         }
     }
 
@@ -73,9 +87,7 @@ impl GexMachine {
     /// avoid excessive reallocation.
     pub fn with_capacity(cap: usize) -> Self {
         let mut states = Vec::with_capacity(cap);
-        states.push(State {
-            transitions: vec![(Rule::Null, Next::Target(1))],
-        });
+        states.push(State::from_transitions(vec![(Rule::Null, Next::Target(1))]));
         states.push(State::accept_state());
         GexMachine { states }
     }
@@ -196,7 +208,9 @@ impl GexMachine {
     /// states without consuming a character, and this is handled separately.
     fn evaluate_rule(rule: &Rule, given: &char) -> bool {
         match rule {
-            Rule::Range(start, end) => *start <= *given as u32 && *given as u32 <= *end,
+            Rule::Range(start, end, positive) => {
+                (*start <= *given as u32 && *given as u32 <= *end) ^ !positive
+            }
             Rule::IsAlphabetic(positive) => given.is_alphabetic() ^ !positive,
             Rule::IsDigit(positive) => given.is_numeric() ^ !positive,
             Rule::IsWhitespace(positive) => given.is_whitespace() ^ !positive,
@@ -264,14 +278,15 @@ impl GexMachine {
                         consumed_a_character = true;
                         match transition {
                             Next::Target(next) => {
-                                println!("transition to: {}", next);
                                 new_states.insert(*next);
                             }
                             Next::Accept => {
-                                println!("Accepted!");
                                 accepted = true;
                             }
                         }
+                    } else if state.short_circuit {
+                        new_states.clear();
+                        break;
                     }
                 }
             }
@@ -279,8 +294,6 @@ impl GexMachine {
 
         // handle Null states, as they should not consume a character
         let (new_states, accepted_via_null) = self.collapse_null_transitions(new_states);
-
-        println!("new_states: {:?}", new_states);
 
         (
             new_states,
@@ -309,17 +322,11 @@ impl GexMachine {
 
         accepted = accepted || accepted_via_null;
 
-        println!("curr states: {:?}", curr_states);
         for (index, input_char) in input[curr_start..].chars().enumerate() {
             // for (index, &input_char) in input[curr_start..].iter().enumerate() {
             let char_len = input_char.len_utf8();
             (curr_states, accepted, consumed_a_character) =
                 self.do_transition(&curr_states, &input_char, accepted);
-
-            println!(
-                "curr states: {:?} ;; consumed: {:?}",
-                curr_states, consumed_a_character
-            );
 
             if consumed_a_character && accepted {
                 candidate.end = Some(index + char_len);
@@ -389,7 +396,6 @@ mod tests {
     fn assert_no_match(gex_machine: &GexMachine, input: &str) {
         let result = gex_machine.find(input);
 
-        println!("{:?}", result);
         assert!(result.is_none());
     }
 
@@ -398,7 +404,7 @@ mod tests {
             states: vec![
                 State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
                 State::from_transitions(vec![(
-                    Rule::Range(atom as u32, atom as u32),
+                    Rule::Range(atom as u32, atom as u32, true),
                     Next::Target(2),
                 )]),
                 State::accept_state(),
