@@ -175,8 +175,13 @@ fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize)
         next_position += '^'.len_utf8();
     }
 
+    let mut num_chars_in_class = 0;
+
     for remaining_char in remaining_chars {
         if remaining_char == ']' && previous_char != '\\' {
+            if num_chars_in_class == 0 {
+                panic!("Empty character set at {}", position)
+            }
             let token = Token::create_long(
                 TokenType::Literal(LiteralType::CharacterClass(
                     CharacterClassType::Manual,
@@ -189,6 +194,7 @@ fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize)
 
             return token;
         }
+        num_chars_in_class += 1;
         next_position += remaining_char.len_utf8();
         previous_char = remaining_char;
     }
@@ -327,8 +333,20 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "Unterminated character set at 3")]
-    fn test_bad_character_class() {
+    fn test_unclosed_character_class() {
         tokenize(r"123[fdhk\]dfsdf");
+    }
+
+    #[test]
+    #[should_panic(expected = "Empty character set at 3")]
+    fn test_empty_positive_character_class() {
+        tokenize(r"abc[]");
+    }
+
+    #[test]
+    #[should_panic(expected = "Empty character set at 3")]
+    fn test_empty_negative_character_class() {
+        tokenize(r"abc[^]");
     }
 
     #[test]
