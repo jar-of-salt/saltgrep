@@ -223,6 +223,7 @@ pub fn compile(input: &str) -> GexMachine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::matcher::Matcher;
 
     #[test]
     fn test_nfa() {
