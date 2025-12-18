@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 // NOTE: this actually forces us to use UTF-8
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Rule {
@@ -16,6 +14,19 @@ pub enum Next {
     Accept,
 }
 
+/// State Flag spec: 64 bit unsigned integer; final 16 bits are reserved for capturing group
+pub enum FlagShifts {
+    ShortCircuit = 0,
+    CloseGroup = 1,
+    CapturingGroup = 48,
+}
+
+pub enum FlagMasks {
+    ShortCircuit = 0x1,
+    CloseGroup = 0x2,
+    EndAnchor = 0x5,
+}
+
 pub type Transition = (Rule, Next);
 
 /// Extensible state struct.
@@ -26,33 +37,50 @@ pub struct State {
     pub transitions: Vec<Transition>,
     /// `true` indicates that a single falsy rule in the transitions should cause all other
     /// potential rules in this state to evaluate as falsy.
-    pub short_circuit: bool,
+    pub flags: u64,
+}
+
+enum Group {
+    Start(u16),
+    End(u16),
 }
 
 impl State {
     pub fn from_transitions(transitions: Vec<Transition>) -> Self {
         State {
             transitions,
-            short_circuit: false,
+            flags: 0x0,
         }
     }
 
     pub fn short_circuit_from_transitions(transitions: Vec<Transition>) -> Self {
         State {
             transitions,
-            short_circuit: true,
+            flags: FlagMasks::ShortCircuit as u64,
         }
     }
 
     pub fn accept_state() -> Self {
         State {
             transitions: vec![(Rule::Null, Next::Accept)],
-            short_circuit: false,
+            flags: 0x0,
         }
     }
 
     pub fn push(&mut self, transition: Transition) {
         self.transitions.push(transition)
+    }
+
+    pub fn short_circuit(&self) -> bool {
+        (self.flags & FlagMasks::ShortCircuit as u64) != 0
+    }
+
+    pub fn group_number(&self) -> u16 {
+        (self.flags >> FlagShifts::CapturingGroup as usize) as u16
+    }
+
+    pub fn close_group(&self) -> u8 {
+        ((self.flags & FlagMasks::CloseGroup as u64) >> FlagShifts::CloseGroup as u64) as u8
     }
 }
 
@@ -201,185 +229,12 @@ impl GexMachine {
     pub fn zero_or_one(self) -> Self {
         self.accept_zero().finalize_quantifier()
     }
-
-    /// Evaluate whether a given input matches the given rule.
-    ///
-    /// Null transition rules will always evaluate as falsy since they need to be collapsed to next
-    /// states without consuming a character, and this is handled separately.
-    fn evaluate_rule(rule: &Rule, given: &char) -> bool {
-        match rule {
-            Rule::Range(start, end, positive) => {
-                (*start <= *given as u32 && *given as u32 <= *end) ^ !positive
-            }
-            Rule::IsAlphabetic(positive) => given.is_alphabetic() ^ !positive,
-            Rule::IsDigit(positive) => given.is_numeric() ^ !positive,
-            Rule::IsWhitespace(positive) => given.is_whitespace() ^ !positive,
-            Rule::Null => false, // skip Null bc it will collapse from the previous state
-        }
-    }
-
-    /// Follows Null (Epsilon) transitions until the current states are all non-Null transitions.
-    ///
-    /// Prevents consumption of input on Null transitions.
-    fn collapse_null_transitions(&self, curr_states: HashSet<usize>) -> (HashSet<usize>, bool) {
-        // Keep track of visited states to prevent uncontrolled recursive collapse.
-        let mut visited = HashSet::<usize>::new();
-        let mut collapsed_states = HashSet::<usize>::new();
-        let mut states = curr_states.into_iter().collect::<Vec<usize>>();
-
-        let mut accept = false;
-
-        while let Some(last_state) = states.pop() {
-            collapsed_states.insert(last_state);
-
-            if visited.contains(&last_state) {
-                continue;
-            }
-            visited.insert(last_state);
-
-            if let Some(state) = self.states.get(last_state) {
-                let mut curr_state_collapsed = false;
-                for (rule, transition) in state.transitions.iter() {
-                    if let Rule::Null = rule {
-                        curr_state_collapsed = true;
-                        match transition {
-                            Next::Target(next) => {
-                                collapsed_states.insert(*next);
-                                // This state might collapse further
-                                states.push(*next);
-                            }
-                            Next::Accept => accept = true,
-                        }
-                    }
-                }
-                if curr_state_collapsed {
-                    collapsed_states.remove(&last_state);
-                }
-            }
-        }
-        (collapsed_states, accept)
-    }
-
-    /// Consumes an input and determines the set of states after the transition.
-    fn do_transition(
-        &self,
-        curr_states: &HashSet<usize>,
-        input_char: &char,
-        mut accepted: bool,
-    ) -> (HashSet<usize>, bool, bool) {
-        let mut new_states: HashSet<usize> = HashSet::new();
-
-        let mut consumed_a_character = false;
-
-        for state_label in curr_states.iter() {
-            if let Some(state) = self.states.get(*state_label) {
-                for (rule, transition) in state.transitions.iter() {
-                    if GexMachine::evaluate_rule(rule, input_char) {
-                        consumed_a_character = true;
-                        match transition {
-                            Next::Target(next) => {
-                                new_states.insert(*next);
-                            }
-                            Next::Accept => {
-                                accepted = true;
-                            }
-                        }
-                    } else if state.short_circuit {
-                        new_states.clear();
-                        break;
-                    }
-                }
-            }
-        }
-
-        // handle Null states, as they should not consume a character
-        let (new_states, accepted_via_null) = self.collapse_null_transitions(new_states);
-
-        (
-            new_states,
-            accepted || accepted_via_null,
-            consumed_a_character,
-        )
-    }
-
-    /// Searches the input from the beginning, returning a match if one is found.
-    pub fn find(&self, input: &str) -> Option<Match> {
-        // start state is always the zeroth state
-        let mut curr_states = HashSet::from([0]);
-        let curr_start = 0;
-        let mut accepted = false;
-        let accepted_via_null: bool;
-        let mut consumed_a_character: bool;
-
-        let mut candidate = MatchCandidate::new();
-        candidate.start = curr_start;
-
-        (curr_states, accepted_via_null) = self.collapse_null_transitions(curr_states);
-
-        if accepted_via_null {
-            candidate.end = Some(curr_start);
-        }
-
-        accepted = accepted || accepted_via_null;
-
-        for (index, input_char) in input[curr_start..].chars().enumerate() {
-            // for (index, &input_char) in input[curr_start..].iter().enumerate() {
-            let char_len = input_char.len_utf8();
-            (curr_states, accepted, consumed_a_character) =
-                self.do_transition(&curr_states, &input_char, accepted);
-
-            if consumed_a_character && accepted {
-                candidate.end = Some(index + char_len);
-            }
-
-            if curr_states.len() == 0 {
-                break;
-            }
-        }
-
-        if candidate.end.is_some() {
-            Some(Match::from_candidate(candidate))
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Debug)]
-struct MatchCandidate {
-    start: usize,
-    end: Option<usize>,
-}
-
-impl MatchCandidate {
-    fn new() -> Self {
-        MatchCandidate {
-            start: 0,
-            end: None,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Match {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl Match {
-    fn from_candidate(candidate: MatchCandidate) -> Self {
-        Match {
-            start: candidate.start,
-            end: candidate
-                .end
-                .expect("End required for conversion to a match"),
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::matcher::Matcher;
 
     fn assert_match(gex_machine: &GexMachine, input: &str, match_string: &str) {
         let result = gex_machine.find(input);
