@@ -63,7 +63,8 @@ impl GexMachine {
             Rule::Range(start, end, positive) => {
                 (*start <= *given as u32 && *given as u32 <= *end) ^ !positive
             }
-            Rule::IsAlphabetic(positive) => given.is_alphabetic() ^ !positive,
+            Rule::Not(value) => *given as u32 != *value,
+            Rule::IsWord(positive) => given.is_alphanumeric() ^ !positive,
             Rule::IsDigit(positive) => given.is_numeric() ^ !positive,
             Rule::IsWhitespace(positive) => given.is_whitespace() ^ !positive,
             Rule::Null => false, // skip Null bc it will collapse from the previous state
@@ -120,6 +121,7 @@ impl GexMachine {
         accepted: &mut bool,
     ) -> u8 {
         let mut states_to_add: HashSet<usize> = HashSet::new();
+
         for (rule, transition) in state.transitions.iter() {
             if GexMachine::evaluate_rule(rule, input_char) {
                 *consumed_a_character = true;
@@ -132,6 +134,7 @@ impl GexMachine {
                     }
                 }
             } else if state.short_circuit() {
+                *consumed_a_character = false;
                 return 0;
             }
         }
