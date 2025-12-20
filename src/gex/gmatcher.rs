@@ -142,39 +142,28 @@ impl GexMachine {
         1
     }
 
-    fn pull_out_state_specials(state: &State, specials: &mut Vec<Special>) {
+    fn capture_group(matcher: &mut GexMatcher, state: &State, position: usize) {
         let group_number = state.group_number();
         if group_number != 0 {
-            specials.push(match state.close_group() {
-                0 => Special::GroupStart(group_number),
-                1 => Special::GroupEnd(group_number),
+            let captures = matcher.captures.as_mut().unwrap();
+            match state.close_group() {
+                0 => {
+                    captures.insert(group_number, MatchCandidate::with_start(position));
+                }
+                1 => {
+                    captures.get_mut(&group_number).as_mut().unwrap().end = Some(position);
+                }
                 _ => panic!("unrecognized group flag"),
-            });
+            }
         }
     }
 
-    fn evaluate_specials(matcher: &mut GexMatcher, specials: &mut Vec<Special>, position: usize) {
-        let is_capturing = matcher.captures.is_some();
-        while let Some(special) = specials.pop() {
-            match (special, is_capturing) {
-                (Special::GroupStart(group_number), true) => {
-                    matcher
-                        .captures
-                        .as_mut()
-                        .unwrap()
-                        .insert(group_number, MatchCandidate::with_start(position));
-                }
-                (Special::GroupEnd(group_number), true) => {
-                    matcher
-                        .captures
-                        .as_mut()
-                        .unwrap()
-                        .get_mut(&group_number)
-                        .map(|candidate| candidate.end = Some(position));
-                }
-                (_, _) => panic!("unknown special evaluation"),
-            };
+    fn evaluate_state_flags(matcher: &mut GexMatcher, state: &State, position: usize) -> bool {
+        let mut short_circuit = false;
+        if matcher.captures.is_some() {
+            GexMachine::capture_group(matcher, state, position);
         }
+        short_circuit
     }
 
     /// Consumes an input and determines the set of states after the transition.
@@ -182,7 +171,7 @@ impl GexMachine {
         &self,
         curr_states: &HashSet<usize>,
         input_char: &char,
-        specials: &mut Vec<Special>,
+        matcher: &mut GexMatcher,
         mut accepted: bool,
     ) -> (HashSet<usize>, bool, bool) {
         let mut new_states: HashSet<usize> = HashSet::new();
@@ -201,7 +190,6 @@ impl GexMachine {
                     0 => break,
                     _ => (),
                 }
-                GexMachine::pull_out_state_specials(&state, specials);
             }
         }
 
@@ -225,7 +213,9 @@ impl Matcher for GexMachine {
         let mut accepted = false;
         let accepted_via_null: bool;
         let mut consumed_a_character: bool;
-        let mut specials: Vec<Special> = Vec::with_capacity(5);
+        let mut matcher = GexMatcher {
+            captures: Some(HashMap::new()),
+        };
 
         let mut candidate = MatchCandidate::new();
         candidate.start = curr_start;
@@ -242,7 +232,7 @@ impl Matcher for GexMachine {
             // for (index, &input_char) in input[curr_start..].iter().enumerate() {
             let char_len = input_char.len_utf8();
             (curr_states, accepted, consumed_a_character) =
-                self.do_transition(&curr_states, &input_char, &mut specials, accepted);
+                self.do_transition(&curr_states, &input_char, &mut matcher, accepted);
 
             if consumed_a_character && accepted {
                 candidate.end = Some(index + char_len);
