@@ -33,43 +33,39 @@ fn wildcard_machine() -> GexMachine {
     }
 }
 
-fn word_char_machine(positive: bool) -> GexMachine {
-    let mut machine = GexMachine {
+fn char_class_escape_machine(positive: bool, transitions: Vec<Transition>) -> GexMachine {
+    let class_state = if positive {
+        State::from_transitions(transitions)
+    } else {
+        State::short_circuit_from_transitions(transitions)
+    };
+    GexMachine {
         states: vec![
             State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
-            State::from_transitions(vec![
-                (Rule::IsAlphabetic(positive), Next::Target(2)),
-                (Rule::IsDigit(positive), Next::Target(2)),
-            ]),
+            class_state,
             State::accept_state(),
         ],
-    };
-
-    if positive {
-        machine.states[1].push((Rule::Range('_' as u32, '_' as u32, true), Next::Target(2)));
     }
+}
 
-    machine
+fn word_char_machine(positive: bool) -> GexMachine {
+    let mut transitions = vec![(Rule::IsWord(positive), Next::Target(2))];
+    if positive {
+        transitions.push((Rule::Range('_' as u32, '_' as u32, true), Next::Target(2)));
+    } else {
+        transitions.push((Rule::Not('_' as u32), Next::Target(2)));
+    }
+    char_class_escape_machine(positive, transitions)
 }
 
 fn digit_char_machine(positive: bool) -> GexMachine {
-    GexMachine {
-        states: vec![
-            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
-            State::from_transitions(vec![(Rule::IsDigit(positive), Next::Target(2))]),
-            State::accept_state(),
-        ],
-    }
+    let transitions = vec![(Rule::IsDigit(positive), Next::Target(2))];
+    char_class_escape_machine(positive, transitions)
 }
 
 fn whitespace_char_machine(positive: bool) -> GexMachine {
-    GexMachine {
-        states: vec![
-            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
-            State::from_transitions(vec![(Rule::IsWhitespace(positive), Next::Target(2))]),
-            State::accept_state(),
-        ],
-    }
+    let transitions = vec![(Rule::IsWhitespace(positive), Next::Target(2))];
+    char_class_escape_machine(positive, transitions)
 }
 
 fn manual_character_class_machine(positive: bool, input_class: &str) -> GexMachine {
@@ -225,40 +221,80 @@ mod tests {
     use super::*;
     use crate::matcher::Matcher;
 
+    fn assert_match(pattern: &str, input: &str, match_string: &str) {
+        let gex_machine = compile(pattern);
+        let result = gex_machine.find(input);
+
+        assert!(result.is_some());
+        let result_match = result.unwrap();
+        assert_eq!(match_string, &input[result_match.start..result_match.end]);
+    }
+
+    fn assert_full_match(pattern: &str, input: &str) {
+        assert_match(pattern, input, input);
+    }
+
+    fn assert_no_match(pattern: &str, input: &str) {
+        let gex_machine = compile(pattern);
+        let result = gex_machine.find(input);
+        println!("{:?}", result);
+
+        assert!(result.is_none());
+    }
+
     #[test]
     fn test_nfa() {
-        assert!(compile(r"abcd+(efg)|i").find(r"i").is_some());
+        assert_full_match(r"abcd+(efg)|i", r"i");
     }
 
     #[test]
     fn test_exotic_cases() {
-        println!("machine: {:?}", compile(r"ab\c.d+(efg)|i"));
-        assert!(compile(r"ab\c.d+(efg)|i").find(r"abcxdddefg").is_some());
+        assert_full_match(r"ab\c.d+(efg)|i", r"abcxdddefg");
     }
 
     #[test]
     fn test_word_char_class() {
-        assert!(compile(r"\w").find(r"-").is_none());
-        assert!(compile(r"\w").find(r"a").is_some());
-        assert!(compile(r"\w+").find(r"abfhkg10235_1204").is_some());
+        assert_full_match(r"\w", r"a");
+        assert_full_match(r"\w+", r"abfhkg10235_1204");
 
-        assert!(compile(r"\W").find(r"&").is_some());
+        assert_no_match(r"\w", r"-");
+        assert_no_match(r"\w+", r"%^$//_0-");
+
+        assert_full_match(r"\W", r"&");
+        assert_match(r"\W+", r"%^$//_0-", r"%^$//");
+
+        assert_no_match(r"\W", r"a");
+        assert_no_match(r"\W+", r"abckjdjfk");
     }
 
     #[test]
     fn test_digit_char_class() {
-        assert!(compile(r"\d").find(r"0").is_some());
-        assert!(compile(r"\d+").find(r"1234567890").is_some());
+        assert_full_match(r"\d", r"0");
+        assert_full_match(r"\d+", r"1234567890");
 
-        assert!(compile(r"\D").find(r"a").is_some());
+        assert_no_match(r"\d", r"^");
+        assert_no_match(r"\d+", r"abc(*");
+
+        assert_full_match(r"\D", r"a");
+        assert_full_match(r"\D+", r"cddfi*&^w");
+
+        assert_no_match(r"\D", r"1");
+        assert_no_match(r"\D+", r"12345");
     }
 
     #[test]
     fn test_whitespace_char_class() {
-        assert!(compile(r"\s").find(r" ").is_some());
-        assert!(compile(r"\s+").find(" \n").is_some());
+        assert_full_match(r"\s", r" ");
+        assert_full_match(r"\s+", " \n");
 
-        assert!(compile(r"\S").find(r"a").is_some());
+        assert_no_match(r"\s", r"d");
+        assert_no_match(r"\s+", r"abc(*");
+
+        assert_full_match(r"\S", r"d");
+        assert_full_match(r"\S+", r"cddfi*&^w");
+
+        assert_no_match(r"\S", "\n");
+        assert_no_match(r"\S+", "  \n  ");
     }
 
     #[test]
