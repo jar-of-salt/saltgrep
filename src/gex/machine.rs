@@ -2,7 +2,8 @@
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Rule {
     Range(u32, u32, bool),
-    IsAlphabetic(bool),
+    Not(u32),
+    IsWord(bool),
     IsDigit(bool),
     IsWhitespace(bool),
     Null,
@@ -352,5 +353,12 @@ mod tests {
         assert_full_match(&gex_machine, "abbacabb");
         assert_full_match(&gex_machine, "bcbbbb");
         assert_full_match(&gex_machine, "baaaabcabbbb");
+    }
+
+    #[test]
+    fn test_state_short_circuit() {
+        let state = State::short_circuit_from_transitions(vec![]);
+
+        assert!(state.short_circuit());
     }
 }
