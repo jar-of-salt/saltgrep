@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 // NOTE: this actually forces us to use UTF-8
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Rule {
@@ -26,6 +28,7 @@ pub enum FlagMasks {
     ShortCircuit = 0x1,
     CloseGroup = 0x2,
     EndAnchor = 0x5,
+    CapturingGroup = (0xFFFF << FlagShifts::CapturingGroup as u64),
 }
 
 pub type Transition = (Rule, Next);
@@ -85,7 +88,7 @@ impl State {
     }
 }
 
-fn shifter(shift: usize) -> impl Fn(State) -> State {
+fn shifter(shift: usize, group_shift: u64) -> impl Fn(State) -> State {
     move |mut state: State| {
         for idx in 0..state.transitions.len() {
             let old_value = state.transitions[idx];
@@ -94,6 +97,17 @@ fn shifter(shift: usize) -> impl Fn(State) -> State {
             } else {
                 old_value
             };
+        }
+        if state.group_number() != 0 {
+            let big_new_number: u64 = (state.group_number() as u64) + group_shift as u64;
+            let cast_result: Result<u16, _> = big_new_number.try_into();
+            match cast_result {
+                Ok(new_group_number) => {
+                    state.flags &= state.flags & !(FlagMasks::CapturingGroup as u64)
+                        | (big_new_number << FlagShifts::CapturingGroup as u64)
+                }
+                Err(e) => panic!("New group number exceeds size of u16; error: {:?}", e),
+            }
         }
         state
     }
@@ -104,6 +118,7 @@ fn shifter(shift: usize) -> impl Fn(State) -> State {
 pub struct GexMachine {
     /// Each state is a vector of unicode ranges and the state they map to
     pub states: Vec<State>,
+    max_group_index: u16,
 }
 
 // TODO: implement find w/ explain -> might be hard with this implementation
@@ -111,6 +126,12 @@ pub struct GexMachine {
 /// NFA implementation for solving regex.
 /// Supports operations to build composite machines via concatenation and alternation.
 impl GexMachine {
+    pub fn from_states(states: Vec<State>) -> Self {
+        GexMachine {
+            states,
+            max_group_index: 0,
+        }
+    }
     /// Create NFA with the given states vec capacity.
     /// The consuming regex matcher should make a best-guess at the eventual size of the NFA to
     /// avoid excessive reallocation.
@@ -118,7 +139,7 @@ impl GexMachine {
         let mut states = Vec::with_capacity(cap);
         states.push(State::from_transitions(vec![(Rule::Null, Next::Target(1))]));
         states.push(State::accept_state());
-        GexMachine { states }
+        GexMachine::from_states(states)
     }
 
     pub fn default() -> Self {
@@ -139,7 +160,10 @@ impl GexMachine {
         // IMPORTANT Assumption: the last state always contains a singular Accept
         self.states.pop();
 
-        let new_states = other.states.into_iter().map(shifter(old_accept_idx));
+        let new_states = other
+            .states
+            .into_iter()
+            .map(shifter(old_accept_idx, self.max_group_index as u64));
 
         self.states.extend(new_states);
 
@@ -184,15 +208,24 @@ impl GexMachine {
         //     }
         // }
 
-        let new_states = other.states.into_iter().map(shifter(other_start));
+        let new_states = other
+            .states
+            .into_iter()
+            .map(shifter(other_start, self.max_group_index as u64));
 
         self.states.extend(new_states);
 
         self
     }
 
-    // TODO: implement capturing groups
-    pub fn group(self) -> Self {
+    pub fn group(mut self) -> Self {
+        let new_group_number =
+            (self.max_group_index as u64 + 1) << FlagShifts::CapturingGroup as u64;
+        let last_idx = self.states.len() - 1;
+        self.states[0].flags |= new_group_number;
+        self.states[last_idx].flags |= new_group_number;
+        self.states[last_idx].flags |= FlagMasks::CloseGroup as u64;
+
         self
     }
 
@@ -256,16 +289,14 @@ mod tests {
     }
 
     fn machine_for(atom: char) -> GexMachine {
-        GexMachine {
-            states: vec![
-                State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
-                State::from_transitions(vec![(
-                    Rule::Range(atom as u32, atom as u32, true),
-                    Next::Target(2),
-                )]),
-                State::accept_state(),
-            ],
-        }
+        GexMachine::from_states(vec![
+            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
+            State::from_transitions(vec![(
+                Rule::Range(atom as u32, atom as u32, true),
+                Next::Target(2),
+            )]),
+            State::accept_state(),
+        ])
     }
 
     #[test]
