@@ -90,7 +90,7 @@ impl State {
     }
 }
 
-fn states_shifter(shift: usize, group_shift: u64) -> impl Fn(State) -> State {
+fn states_shifter(shift: usize) -> impl Fn(State) -> State {
     move |mut state: State| {
         for idx in 0..state.transitions.len() {
             let old_value = state.transitions[idx];
@@ -99,17 +99,6 @@ fn states_shifter(shift: usize, group_shift: u64) -> impl Fn(State) -> State {
             } else {
                 old_value
             };
-        }
-        if state.group_number() != 0 {
-            let big_new_number: u64 = (state.group_number() as u64) + group_shift as u64;
-            let cast_result: Result<u16, _> = big_new_number.try_into();
-            match cast_result {
-                Ok(new_group_number) => {
-                    state.flags &= state.flags & !(FlagMasks::CapturingGroup as u64);
-                    state.flags |= (new_group_number as u64) << FlagShifts::CapturingGroup as u64;
-                }
-                Err(e) => panic!("New group number exceeds size of u16; error: {:?}", e),
-            }
         }
         state
     }
@@ -160,10 +149,15 @@ impl GexMachine {
         &mut self,
         other_state_flags: HashMap<usize, Vec<u64>>,
         old_accept_idx: usize,
+        maintain_root: bool,
     ) {
         let group_shift = self.max_group_index;
         for (state_idx, flags_vec) in other_state_flags.into_iter() {
-            let new_idx = state_idx + old_accept_idx;
+            let new_idx = if maintain_root && state_idx == 0 {
+                state_idx
+            } else {
+                state_idx + old_accept_idx
+            };
             let mut shifted_flags = Some(
                 flags_vec
                     .into_iter()
@@ -203,14 +197,11 @@ impl GexMachine {
         // IMPORTANT Assumption: the last state always contains a singular Accept
         self.states.pop();
 
-        let new_states = other
-            .states
-            .into_iter()
-            .map(states_shifter(old_accept_idx, self.max_group_index as u64));
+        let new_states = other.states.into_iter().map(states_shifter(old_accept_idx));
 
         self.states.extend(new_states);
 
-        self.add_shifted_flags(other.features.state_flags, old_accept_idx);
+        self.add_shifted_flags(other.features.state_flags, old_accept_idx, false);
 
         self.max_group_index += other.max_group_index;
 
@@ -223,7 +214,7 @@ impl GexMachine {
     /// The other NFA will be added as the "right hand side" entry of the alternation,
     /// and the receiver will be the "left hand side."
     /// TODO: determine if taking ownership of other is a good idea...
-    pub fn or(mut self, other: GexMachine) -> GexMachine {
+    pub fn or(mut self, mut other: GexMachine) -> GexMachine {
         self.states.reserve(other.size());
 
         let other_start = self.size();
@@ -231,6 +222,7 @@ impl GexMachine {
         self.states[0].push((Rule::Null, Next::Target(other_start)));
 
         let new_accept_idx = self.size() + other.states.len() - 1;
+        let old_accept_idx = self.size() - 1;
 
         let old_accept = self
             .states
@@ -255,12 +247,13 @@ impl GexMachine {
         //     }
         // }
 
-        let new_states = other
-            .states
-            .into_iter()
-            .map(states_shifter(other_start, self.max_group_index as u64));
+        let new_states = other.states.into_iter().map(states_shifter(other_start));
 
         self.states.extend(new_states);
+
+        self.add_shifted_flags(other.features.state_flags, old_accept_idx, true);
+
+        self.max_group_index += other.max_group_index;
 
         self
     }
