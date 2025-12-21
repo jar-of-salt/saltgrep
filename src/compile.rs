@@ -210,7 +210,7 @@ pub fn compile(input: &str) -> GexMachine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::matcher::Matcher;
+    use crate::matcher::{Match, Matcher};
 
     fn assert_match(pattern: &str, input: &str, match_string: &str) {
         let gex_machine = compile(pattern);
@@ -290,32 +290,32 @@ mod tests {
 
     #[test]
     fn test_basic_character_class() {
-        assert!(compile(r"[abc]").find(r"b").is_some());
-        assert!(compile(r"[a-z]").find(r"x").is_some());
-        assert!(compile(r"[a-zA-Z]").find(r"Y").is_some());
+        assert_full_match(r"[abc]", r"b");
+        assert_full_match(r"[a-z]", r"x");
+        assert_full_match(r"[a-zA-Z]", r"Y");
 
-        assert!(compile(r"[abc]").find(r"d").is_none());
-        assert!(compile(r"[a-z]").find(r"X").is_none());
-        assert!(compile(r"[a-zA-Z]").find(r"5").is_none());
+        assert_no_match(r"[abc]", r"d");
+        assert_no_match(r"[a-z]", r"X");
+        assert_no_match(r"[a-zA-Z]", r"5");
     }
 
     #[test]
     fn test_basic_negative_character_class() {
-        assert!(compile(r"[^abc]").find(r"d").is_some());
-        assert!(compile(r"[^a-z]").find(r"A").is_some());
-        assert!(compile(r"[^a-zA-Z]").find(r"5").is_some());
+        assert_full_match(r"[^abc]", r"d");
+        assert_full_match(r"[^a-z]", r"A");
+        assert_full_match(r"[^a-zA-Z]", r"5");
 
-        assert!(compile(r"[^abc]").find(r"c").is_none());
-        assert!(compile(r"[^a-z]").find(r"a").is_none());
-        assert!(compile(r"[^a-zA-Z]").find(r"X").is_none());
+        assert_no_match(r"[^abc]", r"c");
+        assert_no_match(r"[^a-z]", r"a");
+        assert_no_match(r"[^a-zA-Z]", r"X");
     }
 
     #[test]
     fn test_quantified_character_class() {
         assert!(compile(r"[abc]+").find(r"abcabccba").is_some());
         assert!(compile(r"[^abc]+").find(r"def").is_some());
-        assert!(compile(r"[a-z]*").find(r"a").is_some());
-        assert!(compile(r"[^a-z]?").find(r"A").is_some());
+        assert_full_match(r"[a-z]*", r"a");
+        assert_full_match(r"[^a-z]?", r"A");
         assert!(compile(r"[a-zA-Z]+").find(r"abcdAXZ").is_some());
         assert!(compile(r"[^a-zA-Z]*").find(r"52787&^%$").is_some());
 
@@ -325,5 +325,54 @@ mod tests {
         assert!(compile(r"[^a-z]+").find(r"abc").is_none());
         assert!(compile(r"[a-zA-Z]+").find(r"1203845").is_none());
         assert!(compile(r"[^a-zA-Z]+").find(r"abcACCD").is_none());
+    }
+
+    #[test]
+    fn test_simple_capturing_group() {
+        let machine = compile(r"(abc)");
+        let wrapped_captures = machine.captures(r"abcdfdefg");
+
+        assert!(wrapped_captures.is_some());
+
+        let captures = wrapped_captures.unwrap();
+
+        println!("{:?}", captures);
+
+        assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
+    }
+
+    #[test]
+    fn test_simple_staggered_capturing_group() {
+        let machine = compile(r"123(abc)");
+        println!("{:?}", machine);
+        let wrapped_captures = machine.captures(r"123abcdfdefg");
+
+        assert!(wrapped_captures.is_some());
+
+        let captures = wrapped_captures.unwrap();
+
+        println!("{:?}", captures);
+
+        assert!(*captures.get(&1).unwrap() == Match { start: 3, end: 6 });
+    }
+
+    #[test]
+    fn test_capturing_group() {
+        assert_full_match(r"(abc)df(defg)(123)", r"abcdfdefg123");
+
+        let machine = compile(r"(abc)df(defg)(123)");
+        println!("machine: {:?}", machine);
+
+        let wrapped_captures = machine.captures(r"abcdfdefg123");
+
+        assert!(wrapped_captures.is_some());
+
+        let captures = wrapped_captures.unwrap();
+
+        println!("{:?}", captures);
+
+        assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
+        assert!(*captures.get(&2).unwrap() == Match { start: 5, end: 9 });
+        assert!(*captures.get(&3).unwrap() == Match { start: 9, end: 12 });
     }
 }
