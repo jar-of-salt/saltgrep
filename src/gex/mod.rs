@@ -1,3 +1,4 @@
+pub(self) mod features;
 pub mod gmatcher;
 pub mod machine;
 
