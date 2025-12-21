@@ -126,8 +126,6 @@ impl GexMachine {
         position: usize,
         from_null: bool,
     ) {
-        let group_number = 0;
-
         if let Some(group_numbers) = self.features.group_numbers(state_label) {
             for (group_number, close_group_flag) in group_numbers {
                 let captures = matcher.captures.as_mut().unwrap();
