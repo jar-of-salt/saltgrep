@@ -367,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn test_capturing_group_with_alternation() {
+    fn test_capturing_group_with_alternation1() {
         let machine = compile(r"(abc)df(defg)|(123)");
 
         let wrapped_captures = machine.captures(r"abcdfdefg123");
@@ -376,7 +376,26 @@ mod tests {
 
         let captures = wrapped_captures.unwrap();
 
+        assert!(*captures.get(&0).unwrap() == Match { start: 0, end: 9 });
         assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
         assert!(*captures.get(&2).unwrap() == Match { start: 5, end: 9 });
+        assert!(captures.len() == 3);
+    }
+
+    #[test]
+    fn test_capturing_group_with_alternation2() {
+        let machine = compile(r"(abc)df(defg)|(123)");
+
+        // TODO: implement similar method to `assert full match` for captures
+        // TODO: match RHS of alternation
+        let wrapped_captures = machine.captures(r"123abcdfdefg");
+
+        assert!(wrapped_captures.is_some());
+
+        let captures = wrapped_captures.unwrap();
+
+        assert!(*captures.get(&0).unwrap() == Match { start: 0, end: 3 });
+        assert!(*captures.get(&3).unwrap() == Match { start: 0, end: 3 });
+        assert!(captures.len() == 2);
     }
 }
