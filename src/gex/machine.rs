@@ -1,4 +1,4 @@
-use crate::gex::features::GexFeatures;
+use crate::gex::features::{FlagMasks, FlagShifts, GexFeatures};
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -19,20 +19,6 @@ pub enum Next {
     Accept,
 }
 
-/// State Flag spec: 64 bit unsigned integer; final 16 bits are reserved for capturing group
-pub enum FlagShifts {
-    ShortCircuit = 0,
-    CloseGroup = 1,
-    CapturingGroup = 48,
-}
-
-pub enum FlagMasks {
-    ShortCircuit = 0x1,
-    CloseGroup = 0x2,
-    EndAnchor = 0x5,
-    CapturingGroup = (0xFFFF << FlagShifts::CapturingGroup as u64),
-}
-
 pub type Transition = (Rule, Next);
 
 /// Extensible state struct.
@@ -44,11 +30,6 @@ pub struct State {
     /// `true` indicates that a single falsy rule in the transitions should cause all other
     /// potential rules in this state to evaluate as falsy.
     pub flags: u64,
-}
-
-enum Group {
-    Start(u16),
-    End(u16),
 }
 
 impl State {
@@ -214,7 +195,7 @@ impl GexMachine {
     /// The other NFA will be added as the "right hand side" entry of the alternation,
     /// and the receiver will be the "left hand side."
     /// TODO: determine if taking ownership of other is a good idea...
-    pub fn or(mut self, mut other: GexMachine) -> GexMachine {
+    pub fn or(mut self, other: GexMachine) -> GexMachine {
         self.states.reserve(other.size());
 
         let other_start = self.size();

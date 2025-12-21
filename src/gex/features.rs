@@ -33,14 +33,13 @@ impl GexFeatures {
 }
 
 pub enum FlagShifts {
-    ShortCircuit = 0,
-    CloseGroup = 1,
-    CapturingGroup = 48,
+    CapturingGroup = 0,
+    CloseGroup = 16,
+    ShortCircuit = 17,
 }
 
 pub enum FlagMasks {
-    ShortCircuit = 0x1,
-    CloseGroup = 0x2,
-    EndAnchor = 0x5,
     CapturingGroup = (0xFFFF << FlagShifts::CapturingGroup as u64),
+    CloseGroup = 0x1 << FlagShifts::CloseGroup as u64,
+    ShortCircuit = 0x1 << FlagShifts::ShortCircuit as u64,
 }
