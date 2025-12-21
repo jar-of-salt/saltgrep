@@ -131,8 +131,6 @@ impl GexMachine {
         if let Some(group_numbers) = self.features.group_numbers(state_label) {
             for (group_number, close_group_flag) in group_numbers {
                 let captures = matcher.captures.as_mut().unwrap();
-                println!("capturing {}", group_number);
-                // panic!("tried capturing: {position} {state:?}");
                 match close_group_flag {
                     0 => {
                         let group_position = if from_null && position != 0 {
@@ -278,14 +276,16 @@ impl Matcher for GexMachine {
             captures: Some(HashMap::new()),
         };
 
-        self.do_find(input, &mut matcher);
+        let root_match = self.do_find(input, &mut matcher);
 
-        let captures = matcher.unwrap_captures();
+        let mut captures = matcher.unwrap_captures();
+        if let Some(root_match) = self.do_find(input, &mut matcher) {
+            captures.insert(0, root_match);
+        }
 
-        if captures.is_empty() {
-            None
-        } else {
-            Some(captures)
+        match captures.len() {
+            0 => None,
+            _ => Some(captures),
         }
     }
 }
