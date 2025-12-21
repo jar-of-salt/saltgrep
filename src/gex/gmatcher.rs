@@ -1,4 +1,4 @@
-use crate::gex::machine::{GexMachine, Next, Rule, State};
+use crate::gex::machine::{GexMachine, Next, Rule};
 use crate::matcher::{Match, Matcher};
 use std::collections::{HashMap, HashSet};
 
@@ -27,13 +27,6 @@ impl Match {
                 .expect("End required for conversion to a match"),
         }
     }
-}
-
-enum Special {
-    GroupStart(u16),
-    GroupEnd(u16),
-    StartAnchor,
-    EndAnchor,
 }
 
 struct GexMatcher {
@@ -153,12 +146,10 @@ impl GexMachine {
         state_label: usize,
         position: usize,
         from_null: bool,
-    ) -> bool {
-        let mut short_circuit = false;
+    ) {
         if matcher.captures.is_some() {
             self.capture_group(matcher, state_label, position, from_null);
         }
-        short_circuit
     }
 
     /// Attempts to consume an input and determines the set of states after the transition.
@@ -274,10 +265,10 @@ impl Matcher for GexMachine {
             captures: Some(HashMap::new()),
         };
 
-        let root_match = self.do_find(input, &mut matcher);
+        let maybe_root_match = self.do_find(input, &mut matcher);
 
         let mut captures = matcher.unwrap_captures();
-        if let Some(root_match) = self.do_find(input, &mut matcher) {
+        if let Some(root_match) = maybe_root_match {
             captures.insert(0, root_match);
         }
 
