@@ -265,16 +265,10 @@ impl Matcher for GexMachine {
             captures: Some(HashMap::new()),
         };
 
-        let maybe_root_match = self.do_find(input, &mut matcher);
-
-        let mut captures = matcher.unwrap_captures();
-        if let Some(root_match) = maybe_root_match {
+        self.do_find(input, &mut matcher).map(|root_match| {
+            let mut captures = matcher.unwrap_captures();
             captures.insert(0, root_match);
-        }
-
-        match captures.len() {
-            0 => None,
-            _ => Some(captures),
-        }
+            captures
+        })
     }
 }
