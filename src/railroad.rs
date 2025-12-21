@@ -26,11 +26,9 @@ impl ToString for Ast {
         let mut pretty = String::with_capacity(self.0.len() * 1.2 as usize);
         let length = self.0.len();
         for (idx, node) in self.0.iter().enumerate() {
-            println!("{}: {:?}", idx, node);
             match node {
                 AstNode::Alternation(_, _) => pretty.push('|'),
                 AstNode::Cons(_, _) => {
-                    println!("found cons at {}", idx);
                     pretty.push('J');
                 }
                 AstNode::Group(_) => pretty.push('G'),
