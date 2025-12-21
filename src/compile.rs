@@ -11,26 +11,22 @@ fn machine_for(token: Token, input: &str) -> GexMachine {
 }
 
 fn machine_for_character(character: char) -> GexMachine {
-    return GexMachine {
-        states: vec![
-            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
-            State::from_transitions(vec![(
-                Rule::Range(character as u32, character as u32, true),
-                Next::Target(2),
-            )]),
-            State::accept_state(),
-        ],
-    };
+    GexMachine::from_states(vec![
+        State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
+        State::from_transitions(vec![(
+            Rule::Range(character as u32, character as u32, true),
+            Next::Target(2),
+        )]),
+        State::accept_state(),
+    ])
 }
 
 fn wildcard_machine() -> GexMachine {
-    GexMachine {
-        states: vec![
-            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
-            State::from_transitions(vec![(Rule::Range(0, 0x10ffff, true), Next::Target(2))]),
-            State::accept_state(),
-        ],
-    }
+    GexMachine::from_states(vec![
+        State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
+        State::from_transitions(vec![(Rule::Range(0, 0x10ffff, true), Next::Target(2))]),
+        State::accept_state(),
+    ])
 }
 
 fn char_class_escape_machine(positive: bool, transitions: Vec<Transition>) -> GexMachine {
@@ -39,13 +35,12 @@ fn char_class_escape_machine(positive: bool, transitions: Vec<Transition>) -> Ge
     } else {
         State::short_circuit_from_transitions(transitions)
     };
-    GexMachine {
-        states: vec![
-            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
-            class_state,
-            State::accept_state(),
-        ],
-    }
+    let states = vec![
+        State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
+        class_state,
+        State::accept_state(),
+    ];
+    GexMachine::from_states(states)
 }
 
 fn word_char_machine(positive: bool) -> GexMachine {
@@ -125,19 +120,15 @@ fn manual_character_class_machine(positive: bool, input_class: &str) -> GexMachi
         .map(|range| (range, Next::Target(2)))
         .collect();
 
-    let machine = GexMachine {
-        states: vec![
-            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
-            if positive {
-                State::from_transitions(transitions)
-            } else {
-                State::short_circuit_from_transitions(transitions)
-            },
-            State::accept_state(),
-        ],
-    };
-
-    machine
+    GexMachine::from_states(vec![
+        State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
+        if positive {
+            State::from_transitions(transitions)
+        } else {
+            State::short_circuit_from_transitions(transitions)
+        },
+        State::accept_state(),
+    ])
 }
 
 // NOTE: maybe it would have been easier to figure out token/astnode type layout by writing this
