@@ -74,7 +74,12 @@ impl GexMachine {
     /// Follows Null (Epsilon) transitions until the current states are all non-Null transitions.
     ///
     /// Prevents consumption of input on Null transitions.
-    fn collapse_null_transitions(&self, curr_states: HashSet<usize>) -> (HashSet<usize>, bool) {
+    fn collapse_null_transitions(
+        &self,
+        curr_states: HashSet<usize>,
+        position: usize,
+        matcher: &mut GexMatcher,
+    ) -> (HashSet<usize>, bool) {
         // Keep track of visited states to prevent uncontrolled recursive collapse.
         let mut visited = HashSet::<usize>::new();
         let mut collapsed_states = HashSet::<usize>::new();
@@ -82,15 +87,16 @@ impl GexMachine {
 
         let mut accept = false;
 
-        while let Some(last_state) = states.pop() {
-            collapsed_states.insert(last_state);
+        while let Some(last_state_label) = states.pop() {
+            collapsed_states.insert(last_state_label);
 
-            if visited.contains(&last_state) {
+            if visited.contains(&last_state_label) {
                 continue;
             }
-            visited.insert(last_state);
+            visited.insert(last_state_label);
 
-            if let Some(state) = self.states.get(last_state) {
+            if let Some(state) = self.states.get(last_state_label) {
+                self.evaluate_state_flags(matcher, last_state_label, position, true);
                 let mut curr_state_collapsed = false;
                 for (rule, transition) in state.transitions.iter() {
                     if let Rule::Null = rule {
@@ -106,72 +112,66 @@ impl GexMachine {
                     }
                 }
                 if curr_state_collapsed {
-                    collapsed_states.remove(&last_state);
+                    collapsed_states.remove(&last_state_label);
                 }
             }
         }
         (collapsed_states, accept)
     }
 
-    fn evaluate_state_transitions(
-        state: &State,
-        input_char: &char,
-        new_states: &mut HashSet<usize>,
-        consumed_a_character: &mut bool,
-        accepted: &mut bool,
-    ) -> u8 {
-        let mut states_to_add: HashSet<usize> = HashSet::new();
+    fn capture_group(
+        &self,
+        matcher: &mut GexMatcher,
+        state_label: usize,
+        position: usize,
+        from_null: bool,
+    ) {
+        let group_number = 0;
 
-        for (rule, transition) in state.transitions.iter() {
-            if GexMachine::evaluate_rule(rule, input_char) {
-                *consumed_a_character = true;
-                match transition {
-                    Next::Target(next) => {
-                        states_to_add.insert(*next);
+        if let Some(group_numbers) = self.features.group_numbers(state_label) {
+            for (group_number, close_group_flag) in group_numbers {
+                let captures = matcher.captures.as_mut().unwrap();
+                println!("capturing {}", group_number);
+                // panic!("tried capturing: {position} {state:?}");
+                match close_group_flag {
+                    0 => {
+                        let group_position = if from_null && position != 0 {
+                            position + 1
+                        } else {
+                            position
+                        };
+                        captures.insert(group_number, MatchCandidate::with_start(group_position));
                     }
-                    Next::Accept => {
-                        *accepted = true;
+                    1 => {
+                        captures.get_mut(&group_number).as_mut().unwrap().end = Some(position + 1);
                     }
+                    _ => panic!("unrecognized group flag"),
                 }
-            } else if state.short_circuit() {
-                *consumed_a_character = false;
-                return 0;
-            }
-        }
-        new_states.extend(states_to_add);
-        1
-    }
-
-    fn capture_group(matcher: &mut GexMatcher, state: &State, position: usize) {
-        let group_number = state.group_number();
-        if group_number != 0 {
-            let captures = matcher.captures.as_mut().unwrap();
-            match state.close_group() {
-                0 => {
-                    captures.insert(group_number, MatchCandidate::with_start(position));
-                }
-                1 => {
-                    captures.get_mut(&group_number).as_mut().unwrap().end = Some(position);
-                }
-                _ => panic!("unrecognized group flag"),
             }
         }
     }
 
-    fn evaluate_state_flags(matcher: &mut GexMatcher, state: &State, position: usize) -> bool {
+    fn evaluate_state_flags(
+        &self,
+        matcher: &mut GexMatcher,
+        state_label: usize,
+        position: usize,
+        from_null: bool,
+    ) -> bool {
         let mut short_circuit = false;
         if matcher.captures.is_some() {
-            GexMachine::capture_group(matcher, state, position);
+            self.capture_group(matcher, state_label, position, from_null);
         }
         short_circuit
     }
 
     /// Attempts to consume an input and determines the set of states after the transition.
-    fn transition(
+    fn do_transition(
         &self,
         curr_states: &HashSet<usize>,
         input_char: &char,
         matcher: &mut GexMatcher,
+        position: usize,
         mut accepted: bool,
     ) -> (HashSet<usize>, bool, bool) {
         let mut new_states: HashSet<usize> = HashSet::new();
@@ -183,6 +183,7 @@ impl GexMachine {
                 let mut short_circuit = false;
                 let mut states_to_add: HashSet<usize> = HashSet::new();
 
+                self.evaluate_state_flags(matcher, *state_label, position, false);
                 for (rule, transition) in state.transitions.iter() {
                     if GexMachine::evaluate_rule(rule, input_char) {
                         consumed_a_character = true;
@@ -197,8 +198,10 @@ impl GexMachine {
                     } else if state.short_circuit() {
                         consumed_a_character = false;
                         short_circuit = true;
+                        break;
                     }
                 }
+
                 if short_circuit {
                     break;
                 }
@@ -207,7 +210,8 @@ impl GexMachine {
         }
 
         // handle Null states, as they should not consume a character
-        let (new_states, accepted_via_null) = self.collapse_null_transitions(new_states);
+        let (new_states, accepted_via_null) =
+            self.collapse_null_transitions(new_states, position, matcher);
 
         (
             new_states,
@@ -215,11 +219,8 @@ impl GexMachine {
             consumed_a_character,
         )
     }
-}
 
-impl Matcher for GexMachine {
-    /// Searches the input from the beginning, returning a match if one is found.
-    fn find(&self, input: &str) -> Option<Match> {
+    fn do_find(&self, input: &str, matcher: &mut GexMatcher) -> Option<Match> {
         // start state is always the zeroth state
         let mut curr_states = HashSet::from([0]);
         let start_position = 0;
@@ -227,14 +228,12 @@ impl Matcher for GexMachine {
         let mut accepted = false;
         let accepted_via_null: bool;
         let mut consumed_a_character: bool;
-        let mut matcher = GexMatcher {
-            captures: Some(HashMap::new()),
-        };
 
         let mut candidate = MatchCandidate::new();
         candidate.start = start_position;
 
-        (curr_states, accepted_via_null) = self.collapse_null_transitions(curr_states);
+        (curr_states, accepted_via_null) =
+            self.collapse_null_transitions(curr_states, position, matcher);
 
         if accepted_via_null {
             candidate.end = Some(start_position);
@@ -245,7 +244,7 @@ impl Matcher for GexMachine {
         for input_char in input[start_position..].chars() {
             let char_len = input_char.len_utf8();
             (curr_states, accepted, consumed_a_character) =
-                self.transition(&curr_states, &input_char, &mut matcher, accepted);
+                self.do_transition(&curr_states, &input_char, matcher, position, accepted);
 
             if consumed_a_character {
                 position += char_len;
@@ -263,6 +262,30 @@ impl Matcher for GexMachine {
             Some(Match::from_candidate(&candidate))
         } else {
             None
+        }
+    }
+}
+
+impl Matcher for GexMachine {
+    /// Searches the input from the beginning, returning a match if one is found.
+    fn find(&self, input: &str) -> Option<Match> {
+        let mut matcher = GexMatcher { captures: None };
+        self.do_find(input, &mut matcher)
+    }
+
+    fn captures(&self, input: &str) -> Option<HashMap<u16, Match>> {
+        let mut matcher = GexMatcher {
+            captures: Some(HashMap::new()),
+        };
+
+        self.do_find(input, &mut matcher);
+
+        let captures = matcher.unwrap_captures();
+
+        if captures.is_empty() {
+            None
+        } else {
+            Some(captures)
         }
     }
 }
