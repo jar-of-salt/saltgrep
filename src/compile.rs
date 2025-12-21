@@ -152,7 +152,6 @@ pub fn compile(input: &str) -> GexMachine {
                     combination_stack.push(machine_for_character(escaped));
                 }
                 LiteralType::CharacterClass(class_type, positive) => {
-                    println!("positive: {}", *positive);
                     let class_machine = match class_type {
                         CharacterClassType::Word => word_char_machine(*positive),
                         CharacterClassType::Digit => digit_char_machine(*positive),
@@ -228,7 +227,6 @@ mod tests {
     fn assert_no_match(pattern: &str, input: &str) {
         let gex_machine = compile(pattern);
         let result = gex_machine.find(input);
-        println!("{:?}", result);
 
         assert!(result.is_none());
     }
@@ -336,22 +334,17 @@ mod tests {
 
         let captures = wrapped_captures.unwrap();
 
-        println!("{:?}", captures);
-
         assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
     }
 
     #[test]
     fn test_simple_staggered_capturing_group() {
         let machine = compile(r"123(abc)");
-        println!("{:?}", machine);
         let wrapped_captures = machine.captures(r"123abcdfdefg");
 
         assert!(wrapped_captures.is_some());
 
         let captures = wrapped_captures.unwrap();
-
-        println!("{:?}", captures);
 
         assert!(*captures.get(&1).unwrap() == Match { start: 3, end: 6 });
     }
@@ -361,7 +354,6 @@ mod tests {
         assert_full_match(r"(abc)df(defg)(123)", r"abcdfdefg123");
 
         let machine = compile(r"(abc)df(defg)(123)");
-        println!("machine: {:?}", machine);
 
         let wrapped_captures = machine.captures(r"abcdfdefg123");
 
@@ -369,10 +361,22 @@ mod tests {
 
         let captures = wrapped_captures.unwrap();
 
-        println!("{:?}", captures);
-
         assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
         assert!(*captures.get(&2).unwrap() == Match { start: 5, end: 9 });
         assert!(*captures.get(&3).unwrap() == Match { start: 9, end: 12 });
+    }
+
+    #[test]
+    fn test_capturing_group_with_alternation() {
+        let machine = compile(r"(abc)df(defg)|(123)");
+
+        let wrapped_captures = machine.captures(r"abcdfdefg123");
+
+        assert!(wrapped_captures.is_some());
+
+        let captures = wrapped_captures.unwrap();
+
+        assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
+        assert!(*captures.get(&2).unwrap() == Match { start: 5, end: 9 });
     }
 }
