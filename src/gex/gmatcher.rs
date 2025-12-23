@@ -185,7 +185,7 @@ impl GexMachine {
         }
 
         if consumed_a_character {
-            new_position += 1;
+            new_position += input_char.len_utf8();
         }
 
         // handle Null states, as they should not consume a character
@@ -200,10 +200,9 @@ impl GexMachine {
         let mut curr_states = HashSet::from([0]);
         let start_position = 0;
         let mut position = start_position;
-        let mut next_position = position;
+        let mut next_position: usize;
         let mut accepted = false;
         let accepted_via_null: bool;
-        let mut consumed_a_character: bool;
 
         let mut candidate = MatchCandidate::new();
         candidate.start = start_position;
@@ -218,7 +217,6 @@ impl GexMachine {
         // accepted = accepted || accepted_via_null;
 
         for input_char in input[start_position..].chars() {
-            let char_len = input_char.len_utf8();
             (curr_states, accepted, next_position) =
                 self.do_transition(&curr_states, &input_char, matcher, position, accepted);
 
