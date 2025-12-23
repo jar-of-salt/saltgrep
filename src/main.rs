@@ -30,27 +30,34 @@ pub fn main() -> Result<(), io::Error> {
             format!("Bad unicode pattern at {}", valid_up_to),
         )
     })?;
-    println!("pattern: {}", pattern);
     let file_path = &args[2];
-    println!("file: {:?}", file_path);
 
     // let contents = fs::read_to_string(file_path).expect("File failed to read");
-    let contents = fs::read_to_string("src/lib.rs").expect("File failed to read");
-    println!("lib: {}", contents);
+    let contents = fs::read_to_string(file_path).expect("saltgrep:");
+    // println!("lib: {}", contents);
 
     let searcher = compile(pattern);
+    // println!(
+    //     "{:?}",
+    //     contents
+    //         .lines()
+    //         .enumerate()
+    //         .map(|(idx, line)| {
+    //             println!("line {}", line);
+    //             searcher.find(line).map(|match_result| line) // format!("{} :: {}", idx, match_result.substr(line)))
+    //         })
+    //         .filter(Option::is_some)
+    //         .collect::<Vec<Option<String>>>()
+    // );
 
-    let matches = contents
+    contents
         .lines()
-        .enumerate()
-        .map(|(idx, line)| {
-            println!("line: {}", line);
-            searcher
-                .find(line)
-                .map(|match_result| format!("{} :: {}", idx, match_result.substr(line)))
+        .map(|line| {
+            searcher.find(line).map(|_| line) // format!("{} :: {}", idx, match_result.substr(line)))
         })
         .filter(Option::is_some)
-        .map(|output| println!("{}", output.unwrap()));
+        .map(|output| println!("{}", output.unwrap()))
+        .count();
 
     Ok(())
 }
