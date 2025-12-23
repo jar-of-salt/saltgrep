@@ -1,10 +1,34 @@
-// todo: tokenizer
-// input pattern -> tokens -> parse? into NFA
 // TODO: visualize!
 use crate::operators::{Arity, Operator};
+use std::fmt;
 use std::iter::Peekable;
 use std::ops::Range;
 use std::str::Chars;
+
+type Result<T> = std::result::Result<T, TokenizeError>;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum TokenizeError {
+    EmptyCharacterSet(usize),
+    UnterminatedCharacterSet(usize),
+    UnterminatedEscape(usize),
+}
+
+impl fmt::Display for TokenizeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TokenizeError::EmptyCharacterSet(position) => {
+                write!(f, "Empty character set at {}", position)
+            }
+            TokenizeError::UnterminatedCharacterSet(position) => {
+                write!(f, "Unterminated character set at {}", position)
+            }
+            TokenizeError::UnterminatedEscape(position) => {
+                write!(f, "Unterminated escape character at {}", position)
+            }
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum QuantifierType {
@@ -15,7 +39,6 @@ pub enum QuantifierType {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum LiteralType {
-    // TODO: implement wildcard
     Wildcard,
     Character,
     EscapedCharacter,
@@ -157,7 +180,7 @@ impl Operator for Token {
 // | 8 | Alternation                       | |                    |
 // +---+-----------------------------------+----------------------+
 
-fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize) -> Token {
+fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize) -> Result<Token> {
     // TODO: evaluate this, as this choice might result in some WEIRD bugs
     let mut previous_char = '\0';
     let mut inverted = false;
@@ -177,7 +200,7 @@ fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize)
     for remaining_char in remaining_chars {
         if remaining_char == ']' && previous_char != '\\' {
             if num_chars_in_class == 0 {
-                panic!("Empty character set at {}", position)
+                return Err(TokenizeError::EmptyCharacterSet(position)); //("Empty character set at {}", position);
             }
             let token = Token::create_long(
                 TokenType::Literal(LiteralType::CharacterClass(
@@ -189,7 +212,7 @@ fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize)
                 next_position + remaining_char.len_utf8(),
             );
 
-            return token;
+            return Ok(token);
         }
         num_chars_in_class += 1;
         next_position += remaining_char.len_utf8();
@@ -197,17 +220,17 @@ fn munch_character_class(remaining_chars: &mut Peekable<Chars>, position: usize)
     }
 
     // TODO: add error reporting module
-    panic!("Unterminated character set at {}", position);
+    Err(TokenizeError::UnterminatedCharacterSet(position)) // !("Unterminated character set at {}", position);
 }
 
 fn munch_character_class_escape(
     remaining_chars: &mut Peekable<Chars>,
     position: usize,
-) -> Option<Token> {
+) -> Result<Option<Token>> {
     // TODO: is this a good error? Should this error happen? Is an \ at the end of a string OK?
     let next_character = remaining_chars
         .peek()
-        .unwrap_or_else(|| panic!("Unclosed escape sequence at {}", position));
+        .ok_or(TokenizeError::UnterminatedEscape(position))?;
 
     let end_position = position + '\\'.len_utf8() + next_character.len_utf8();
 
@@ -242,21 +265,22 @@ fn munch_character_class_escape(
     if let Some(_) = character_class_escape_token {
         remaining_chars.next();
     }
-    character_class_escape_token
+    Ok(character_class_escape_token)
 }
 
-fn munch_escape_character(remaining_chars: &mut Peekable<Chars>, position: usize) -> Token {
+fn munch_escape_character(remaining_chars: &mut Peekable<Chars>, position: usize) -> Result<Token> {
     // supports arbitrary escape characters, but also gives me flexibility to add word boundary
     // support in the future, etc. etc.
-    let remaining_char = remaining_chars
+    remaining_chars
         .next()
-        .unwrap_or_else(|| panic!("Unclosed escape character at {}", position));
-
-    Token::create_long(
-        TokenType::Literal(LiteralType::EscapedCharacter),
-        position,
-        position + '\\'.len_utf8() + remaining_char.len_utf8(),
-    )
+        .map(|remaining_char| {
+            Token::create_long(
+                TokenType::Literal(LiteralType::EscapedCharacter),
+                position,
+                position + '\\'.len_utf8() + remaining_char.len_utf8(),
+            )
+        })
+        .ok_or(TokenizeError::UnterminatedEscape(position))
 }
 
 // TODO: improve name; it inserts a cons if necessary
@@ -273,33 +297,40 @@ fn munch_token(
     character: &char,
     position: usize,
     tokens: &mut Vec<Token>,
-) -> Token {
+) -> Result<Token> {
     match character {
         '(' => {
             insert_cons(tokens);
-            Token::open_group(position)
+            Ok(Token::open_group(position))
         }
-        ')' => Token::close_group(position),
+        ')' => Ok(Token::close_group(position)),
         '[' => {
             insert_cons(tokens);
             munch_character_class(remaining_chars, position)
         }
-        '|' => Token::create(TokenType::Alternation, position),
-        '*' => Token::quantifier(QuantifierType::ZeroOrMore, position),
-        '+' => Token::quantifier(QuantifierType::OneOrMore, position),
-        '?' => Token::quantifier(QuantifierType::ZeroOrOne, position),
+        '|' => Ok(Token::create(TokenType::Alternation, position)),
+        '*' => Ok(Token::quantifier(QuantifierType::ZeroOrMore, position)),
+        '+' => Ok(Token::quantifier(QuantifierType::OneOrMore, position)),
+        '?' => Ok(Token::quantifier(QuantifierType::ZeroOrOne, position)),
         '\\' => {
             insert_cons(tokens);
             munch_character_class_escape(remaining_chars, position)
+                .transpose()
                 .unwrap_or_else(|| munch_escape_character(remaining_chars, position))
         }
         '.' => {
             insert_cons(tokens);
-            Token::create(TokenType::Literal(LiteralType::Wildcard), position)
+            Ok(Token::create(
+                TokenType::Literal(LiteralType::Wildcard),
+                position,
+            ))
         }
         _ => {
             insert_cons(tokens);
-            Token::create(TokenType::Literal(LiteralType::Character), position)
+            Ok(Token::create(
+                TokenType::Literal(LiteralType::Character),
+                position,
+            ))
         }
     }
 }
@@ -307,21 +338,19 @@ fn munch_token(
 // TODO: having a type Tokenization supporting .add(Token) would
 // make the `insert_cons` logic simpler, since it could happen just there
 
-pub fn tokenize(in_str: &str) -> Vec<Token> {
+pub fn tokenize(in_str: &str) -> Result<Vec<Token>> {
     let mut position = 0;
     let mut tokens = Vec::new();
     let mut remaining_chars = in_str.chars().peekable();
 
-    // TODO: determine if this could just be a for loop since the next calls would also affect one
-    // of those
     while let Some(current_char) = remaining_chars.next() {
-        let token = munch_token(&mut remaining_chars, &current_char, position, &mut tokens);
-        // TODO: the problem might be here
+        // Returns at first error
+        let token = munch_token(&mut remaining_chars, &current_char, position, &mut tokens)?;
         position = token.position.1; // new_position + current_char.len_utf8();
         tokens.push(token);
     }
 
-    tokens
+    Ok(tokens)
 }
 
 #[cfg(test)]
@@ -329,21 +358,29 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic(expected = "Unterminated character set at 3")]
     fn test_unclosed_character_class() {
-        tokenize(r"123[fdhk\]dfsdf");
+        assert_eq!(
+            tokenize(r"123[fdhk\]dfsdf"),
+            Err(TokenizeError::UnterminatedCharacterSet(3))
+        );
     }
 
     #[test]
-    #[should_panic(expected = "Empty character set at 3")]
     fn test_empty_positive_character_class() {
-        tokenize(r"abc[]");
+        assert_eq!(tokenize(r"abc[]"), Err(TokenizeError::EmptyCharacterSet(3)));
     }
 
     #[test]
-    #[should_panic(expected = "Empty character set at 3")]
     fn test_empty_negative_character_class() {
-        tokenize(r"abc[^]");
+        assert_eq!(
+            tokenize(r"abc[^]"),
+            Err(TokenizeError::EmptyCharacterSet(3))
+        );
+    }
+
+    #[test]
+    fn test_unterminated_escape() {
+        assert_eq!(tokenize(r"abc\"), Err(TokenizeError::UnterminatedEscape(3)));
     }
 
     #[test]
@@ -402,7 +439,7 @@ mod tests {
                 Token::cons(30),
                 Token::create(TokenType::Literal(LiteralType::Character), 30),
             ],
-            tokenize(r"abce[fg]+h*|i?j\kl[^a-c](abcd)i")
+            tokenize(r"abce[fg]+h*|i?j\kl[^a-c](abcd)i").unwrap()
         )
     }
 }
