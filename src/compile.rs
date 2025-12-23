@@ -312,4 +312,20 @@ mod tests {
         assert_eq!(*captures.get(&4).unwrap(), Match { start: 7, end: 11 });
         assert_eq!(captures.len(), 5);
     }
+
+    #[test]
+    fn test_empty_group() {
+        let machine = compile(r"()af(())d(f()f)");
+
+        let wrapped_captures = machine.captures(r"afdffdiui");
+        assert!(wrapped_captures.is_some());
+        let captures = wrapped_captures.unwrap();
+        assert_eq!(*captures.get(&0).unwrap(), Match { start: 0, end: 5 });
+        assert_eq!(*captures.get(&1).unwrap(), Match { start: 0, end: 0 });
+        assert_eq!(*captures.get(&2).unwrap(), Match { start: 2, end: 2 });
+        assert_eq!(*captures.get(&3).unwrap(), Match { start: 2, end: 2 });
+        assert_eq!(*captures.get(&4).unwrap(), Match { start: 3, end: 5 });
+        assert_eq!(*captures.get(&5).unwrap(), Match { start: 4, end: 4 });
+        assert_eq!(captures.len(), 6);
+    }
 }
