@@ -74,7 +74,9 @@ impl Ast {
         let mut out_stack = Vec::<AstRef>::with_capacity(tokens.len());
         let mut op_stack = Vec::with_capacity(tokens.len() / 2);
 
-        for token in tokens {
+        let mut peekable_tokens = tokens.into_iter().peekable();
+
+        while let Some(token) = peekable_tokens.next() {
             match token.kind {
                 // when token is a character, or character-like object, push to output
                 TokenType::Literal(literal_type) => {
@@ -83,6 +85,16 @@ impl Ast {
                 // when a group opens, push to operators
                 TokenType::OpenGroup => {
                     op_stack.push(token);
+                    if let Some(Token {
+                        kind: TokenType::CloseGroup,
+                        ..
+                    }) = peekable_tokens.peek()
+                    {
+                        out_stack.push(ast.add(AstNode::Literal(
+                            LiteralType::Character,
+                            Token::empty_string(token.start() + 1),
+                        )));
+                    }
                 }
                 // when a group closes, greedily consume the operator stack
                 TokenType::CloseGroup => {
@@ -197,12 +209,7 @@ fn add_group(
         let new_ref = ast.add(get_operator_node(op_token, out_stack));
         out_stack.push(new_ref);
     }
-    let group_contents = out_stack.pop().unwrap_or_else(|| {
-        ast.add(AstNode::Literal(
-            LiteralType::Character,
-            Token::empty_string(group_pos),
-        ))
-    });
+    let group_contents = out_stack.pop().expect("Group must have contents");
     let new_ref = ast.add(AstNode::Group(group_contents));
     out_stack.push(new_ref);
 }
