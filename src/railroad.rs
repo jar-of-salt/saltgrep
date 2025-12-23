@@ -1,8 +1,34 @@
 use crate::operators::{Arity, Operator};
 use crate::tokenize::{LiteralType, QuantifierType, Token, TokenType};
+use std::fmt;
+
+type Result<T> = std::result::Result<T, SyntaxError>;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum SyntaxError {
+    // UnclosedGroup(usize),
+    // MissingBinaryOperand(TokenType, usize),
+}
+
+impl fmt::Display for SyntaxError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // match self {
+        // SyntaxError::EmptyCharacterSet(position) => {
+        //     write!(f, "Empty character set at {}", position)
+        // }
+        // SyntaxError::UnterminatedCharacterSet(position) => {
+        //     write!(f, "Unterminated character set at {}", position)
+        // }
+        // SyntaxError::UnterminatedEscape(position) => {
+        //     write!(f, "Unterminated escape character at {}", position)
+        // }
+        // }
+        write!(f, "")
+    }
+}
 
 #[derive(Debug, PartialEq)]
-pub struct AstRef(u32);
+pub struct AstRef(usize);
 
 #[derive(Debug, PartialEq)]
 pub enum AstNode {
@@ -52,9 +78,8 @@ impl ToString for Ast {
 
 impl Ast {
     pub fn add(&mut self, node: AstNode) -> AstRef {
-        let idx = self.0.len();
         self.0.push(node);
-        AstRef(idx.try_into().expect("too many nodes in the AST"))
+        AstRef(self.0.len())
     }
 
     pub fn get(&self, node_ref: AstRef) -> &AstNode {
@@ -69,7 +94,7 @@ impl Ast {
         println!("{}", self.to_string());
     }
 
-    pub fn from_tokens(tokens: Vec<Token>) -> Ast {
+    pub fn from_tokens(tokens: Vec<Token>) -> Result<Ast> {
         let mut ast = Ast(Vec::with_capacity(2 * tokens.len()));
         let mut out_stack = Vec::<AstRef>::with_capacity(tokens.len());
         let mut op_stack = Vec::with_capacity(tokens.len() / 2);
@@ -134,13 +159,13 @@ impl Ast {
             out_stack.push(new_ref);
         }
 
-        ast
+        Ok(ast)
     }
 
     /// Alias for Ast::from_tokens.
     ///
     /// Reference to Shunting-Yard Algorithm.
-    pub fn railroad(tokens: Vec<Token>) -> Ast {
+    pub fn railroad(tokens: Vec<Token>) -> Result<Ast> {
         Ast::from_tokens(tokens)
     }
 }
@@ -224,98 +249,116 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_begins_with_quantifier() {
-        Ast::from_tokens(tokenize::tokenize("*abcd"));
+        assert!(
+            Ast::from_tokens(tokenize::tokenize("*abcd").expect("tokenization failed")).is_ok()
+        );
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_quantifier_on_open_group() {
-        Ast::from_tokens(tokenize::tokenize("abcd(*abcd)"));
+        assert!(
+            Ast::from_tokens(tokenize::tokenize("abcd(*abcd)").expect("tokenization failed"))
+                .is_ok()
+        );
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_no_close_group() {
-        Ast::from_tokens(tokenize::tokenize("abcd(*abcd(abcde?fg+)?"));
+        assert!(Ast::from_tokens(
+            tokenize::tokenize("abcd(*abcd(abcde?fg+)?").expect("tokenization failed")
+        )
+        .is_ok());
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_no_open_group() {
-        Ast::from_tokens(tokenize::tokenize("abcd*abcd(abcde)?fg+)?"));
+        assert!(Ast::from_tokens(
+            tokenize::tokenize("abcd*abcd(abcde)?fg+)?").expect("tokenization failed"),
+        )
+        .is_ok());
     }
 
     // TODO: make sure gex can match empty string
     #[test]
     fn test_empty_group() {
-        Ast::from_tokens(tokenize::tokenize("()"));
+        assert!(Ast::from_tokens(tokenize::tokenize("()").expect("tokenization failed")).is_ok());
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_double_alternation() {
-        Ast::from_tokens(tokenize::tokenize("a||"));
+        assert!(Ast::from_tokens(tokenize::tokenize("a||").expect("tokenization failed")).is_ok());
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_no_rhs_alternation() {
-        Ast::from_tokens(tokenize::tokenize("c|"));
+        assert!(Ast::from_tokens(tokenize::tokenize("c|").expect("tokenization failed")).is_ok());
     }
 
     // TODO: expected message
     #[test]
     #[should_panic]
     fn test_no_lhs_alternation() {
-        Ast::from_tokens(tokenize::tokenize("|c"));
+        assert!(Ast::from_tokens(tokenize::tokenize("|c").expect("tokenization failed")).is_ok());
     }
 
     #[test]
     fn test_pointless_equivalence() {
-        let tokens = tokenize::tokenize("a|b|c");
+        let tokens = tokenize::tokenize("a|b|c").expect("tokenization failed");
         assert_eq!(
-            Ast::from_tokens(tokens.clone()),
-            Ast::railroad(tokens.clone())
+            Ast::from_tokens(tokens.clone()).expect("parsing succeeds"),
+            Ast::railroad(tokens.clone()).expect("parsing succeeds")
         );
     }
 
     #[test]
     fn test_alternation_associativity() {
-        let tokens = tokenize::tokenize("a|b|c");
+        let tokens = tokenize::tokenize("a|b|c").expect("tokenization failed");
 
-        assert_eq!("0..1 2..3 | 4..5 |", Ast::railroad(tokens).to_string());
+        assert_eq!(
+            "0..1 2..3 | 4..5 |",
+            Ast::railroad(tokens).unwrap().to_string()
+        );
     }
 
     #[test]
     fn test_cons_associativity() {
         // Pseudo-pattern: 1|2|3
-        let tokens = tokenize::tokenize("abc");
+        let tokens = tokenize::tokenize("abc").expect("tokenization failed");
 
-        assert_eq!("0..1 1..2 J 2..3 J", Ast::from_tokens(tokens).to_string());
+        assert_eq!(
+            "0..1 1..2 J 2..3 J",
+            Ast::from_tokens(tokens).unwrap().to_string()
+        );
     }
 
     #[test]
     fn test_mixed_pattern_1() {
         // Pseudo-pattern: (12+34)5|6*
-        let tokens = tokenize::tokenize("(ab+34)5|6*");
+        let tokens = tokenize::tokenize("(ab+34)5|6*").expect("tokenization failed");
 
         assert_eq!(
             "1..2 2..3 + J 4..5 J 5..6 J G 7..8 J 9..10 * |",
-            Ast::from_tokens(tokens).to_string()
+            Ast::from_tokens(tokens).unwrap().to_string()
         );
     }
 
     #[test]
     fn test_mixed_pattern_2() {
-        let tokens = tokenize::tokenize("(ab+(cd)*e(f(g)h))i?|(j(k(l|m|n)))");
+        let tokens =
+            tokenize::tokenize("(ab+(cd)*e(f(g)h))i?|(j(k(l|m|n)))").expect("tokenization failed");
         assert_eq!(
             "1..2 2..3 + J 5..6 6..7 J G * J 9..10 J 11..12 13..14 G J 15..16 J G J G 18..19 ? J 22..23 24..25 26..27 28..29 | 30..31 | G J G J G |",
-            Ast::from_tokens(tokens).to_string()
+            Ast::from_tokens(tokens).unwrap().to_string()
         );
     }
 }
