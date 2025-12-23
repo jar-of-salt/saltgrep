@@ -122,7 +122,7 @@ mod tests {
         assert_full_match(r"\w+", r"abfhkg10235_1204");
 
         assert_no_match(r"\w", r"-");
-        assert_no_match(r"\w+", r"%^$//_0-");
+        assert_no_match(r"\w+", r"%^$//-");
 
         assert_full_match(r"\W", r"&");
         assert_match(r"\W+", r"%^$//_0-", r"%^$//");
@@ -209,7 +209,7 @@ mod tests {
 
         let captures = wrapped_captures.unwrap();
 
-        assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
+        assert_eq!(*captures.get(&1).unwrap(), Match { start: 0, end: 3 });
     }
 
     #[test]
@@ -221,7 +221,7 @@ mod tests {
 
         let captures = wrapped_captures.unwrap();
 
-        assert!(*captures.get(&1).unwrap() == Match { start: 3, end: 6 });
+        assert_eq!(*captures.get(&1).unwrap(), Match { start: 3, end: 6 });
     }
 
     #[test]
@@ -236,9 +236,9 @@ mod tests {
 
         let captures = wrapped_captures.unwrap();
 
-        assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
-        assert!(*captures.get(&2).unwrap() == Match { start: 5, end: 9 });
-        assert!(*captures.get(&3).unwrap() == Match { start: 9, end: 12 });
+        assert_eq!(*captures.get(&1).unwrap(), Match { start: 0, end: 3 });
+        assert_eq!(*captures.get(&2).unwrap(), Match { start: 5, end: 9 });
+        assert_eq!(*captures.get(&3).unwrap(), Match { start: 9, end: 12 });
     }
 
     #[test]
@@ -251,10 +251,10 @@ mod tests {
 
         let captures = wrapped_captures.unwrap();
 
-        assert!(*captures.get(&0).unwrap() == Match { start: 0, end: 9 });
-        assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
-        assert!(*captures.get(&2).unwrap() == Match { start: 5, end: 9 });
-        assert!(captures.len() == 3);
+        assert_eq!(*captures.get(&0).unwrap(), Match { start: 0, end: 9 });
+        assert_eq!(*captures.get(&1).unwrap(), Match { start: 0, end: 3 });
+        assert_eq!(*captures.get(&2).unwrap(), Match { start: 5, end: 9 });
+        assert_eq!(captures.len(), 3);
     }
 
     #[test]
@@ -269,8 +269,47 @@ mod tests {
 
         let captures = wrapped_captures.unwrap();
 
-        assert!(*captures.get(&0).unwrap() == Match { start: 0, end: 3 });
-        assert!(*captures.get(&3).unwrap() == Match { start: 0, end: 3 });
-        assert!(captures.len() == 2);
+        assert_eq!(*captures.get(&0).unwrap(), Match { start: 0, end: 3 });
+        assert_eq!(*captures.get(&3).unwrap(), Match { start: 0, end: 3 });
+        assert_eq!(captures.len(), 2);
     }
+
+    // #[test]
+    // fn test_nested_capturing_group() {
+    //     let machine = compile(r"(a(bc))");
+    //     println!("{:?}", machine);
+
+    //     // TODO: implement similar method to `assert full match` for captures
+    //     // TODO: match RHS of alternation
+    //     let wrapped_captures = machine.captures(r"abc");
+
+    //     assert!(wrapped_captures.is_some());
+
+    //     let captures = wrapped_captures.unwrap();
+
+    //     println!("{:?}", captures);
+
+    //     assert_eq!(*captures.get(&0).unwrap(), Match { start: 0, end: 3 });
+    //     assert_eq!(*captures.get(&1).unwrap(), Match { start: 0, end: 3 });
+    //     assert_eq!(*captures.get(&2).unwrap(), Match { start: 1, end: 3 });
+    //     assert_eq!(captures.len(), 3);
+    //     // let machine = compile(r"(a(bc))df(defg)");
+    //     // println!("{:?}", machine);
+
+    //     // // TODO: implement similar method to `assert full match` for captures
+    //     // // TODO: match RHS of alternation
+    //     // let wrapped_captures = machine.captures(r"abcdfdefgh");
+
+    //     // assert!(wrapped_captures.is_some());
+
+    //     // let captures = wrapped_captures.unwrap();
+
+    //     // println!("{:?}", captures);
+
+    //     // assert!(*captures.get(&0).unwrap() == Match { start: 0, end: 9 });
+    //     // assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
+    //     // assert!(*captures.get(&2).unwrap() == Match { start: 1, end: 3 });
+    //     // assert!(*captures.get(&3).unwrap() == Match { start: 5, end: 9 });
+    //     // assert!(captures.len() == 2);
+    // }
 }
