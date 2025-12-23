@@ -83,15 +83,12 @@ impl GexMachine {
 
         while let Some(last_state_label) = states.pop() {
             collapsed_states.insert(last_state_label);
-            println!("A state: {}, position: {}", last_state_label, position);
-
             if visited.contains(&last_state_label) {
                 continue;
             }
             visited.insert(last_state_label);
 
             if let Some(state) = self.states.get(last_state_label) {
-                println!("B state: {}, position: {}", last_state_label, position);
                 self.evaluate_state_flags(matcher, last_state_label, position);
                 for (rule, transition) in state.transitions.iter() {
                     if let Rule::Null = rule {
@@ -117,11 +114,9 @@ impl GexMachine {
                 let captures = matcher.captures.as_mut().unwrap();
                 match close_group_flag {
                     0 => {
-                        println!("open {} at {}", group_number, position);
                         captures.insert(group_number, MatchCandidate::with_start(position));
                     }
                     1 => {
-                        println!("close {} at {}", group_number, position);
                         if group_number == 3 {
                             // panic!("debug");
                         }
