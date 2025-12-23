@@ -239,9 +239,6 @@ impl GexMachine {
         let start_flag = new_group_number;
         let end_flag = new_group_number | FlagMasks::CloseGroup as u64;
 
-        // TODO: respect existing groups; i.e. if there is already a group inside somewhere,
-        // then it is a HIGHER NUMBERED GROUP
-
         self.features
             .state_flags
             .entry(0)

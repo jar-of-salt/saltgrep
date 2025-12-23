@@ -37,6 +37,7 @@ pub fn compile(input: &str) -> GexMachine {
                     };
                     combination_stack.push(class_machine);
                 }
+                // TODO: determine if this panic is necessary
                 LiteralType::EmptyString => panic!("Empty string not implemented"),
             },
             AstNode::Quantifier(qtype, _) => match qtype {
