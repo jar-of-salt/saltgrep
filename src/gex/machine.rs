@@ -143,22 +143,7 @@ impl GexMachine {
                 flags_vec
                     .into_iter()
                     .filter(|flags| GexFeatures::group_number(*flags) != 0)
-                    .map(|mut flags| {
-                        let big_new_number: u64 =
-                            (GexFeatures::group_number(flags) as u64) + group_shift as u64;
-                        let cast_result: Result<u16, _> = big_new_number.try_into();
-                        match cast_result {
-                            Ok(new_group_number) => {
-                                flags &= flags & !(FlagMasks::CapturingGroup as u64);
-                                flags |=
-                                    (new_group_number as u64) << FlagShifts::CapturingGroup as u64;
-                                flags
-                            }
-                            Err(e) => {
-                                panic!("New group number exceeds size of u16; error: {:?}", e)
-                            }
-                        }
-                    })
+                    .map(|flags| GexFeatures::increment_group_number(flags, group_shift))
                     .collect::<Vec<u64>>(),
             );
 
@@ -242,11 +227,20 @@ impl GexMachine {
     // TODO: implement non-capturing groups
     pub fn group(mut self) -> Self {
         self.max_group_index += 1;
-        let new_group_number = (self.max_group_index as u64) << FlagShifts::CapturingGroup as u64;
+        let new_group_number = 1 << FlagShifts::CapturingGroup as u64;
         let last_idx = self.states.len() - 1;
+
+        for flags_vec in self.features.state_flags.values_mut() {
+            for flags in flags_vec.iter_mut() {
+                *flags = GexFeatures::increment_group_number(*flags, 1);
+            }
+        }
 
         let start_flag = new_group_number;
         let end_flag = new_group_number | FlagMasks::CloseGroup as u64;
+
+        // TODO: respect existing groups; i.e. if there is already a group inside somewhere,
+        // then it is a HIGHER NUMBERED GROUP
 
         self.features
             .state_flags
@@ -306,6 +300,7 @@ impl GexMachine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gex::simple_machines::machine_for_character;
     use crate::matcher::Matcher;
 
     fn assert_match(gex_machine: &GexMachine, input: &str, match_string: &str) {
@@ -326,22 +321,11 @@ mod tests {
         assert!(result.is_none());
     }
 
-    fn machine_for(atom: char) -> GexMachine {
-        GexMachine::from_states(vec![
-            State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
-            State::from_transitions(vec![(
-                Rule::Range(atom as u32, atom as u32, true),
-                Next::Target(2),
-            )]),
-            State::accept_state(),
-        ])
-    }
-
     #[test]
     fn test_cons() {
-        let gex_machine = machine_for('a')
-            .cons(machine_for('b'))
-            .cons(machine_for('c'));
+        let gex_machine = machine_for_character('a')
+            .cons(machine_for_character('b'))
+            .cons(machine_for_character('c'));
 
         assert_full_match(&gex_machine, "abc");
         assert_no_match(&gex_machine, "cba");
@@ -349,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_or() {
-        let gex_machine = machine_for('a').or(machine_for('b'));
+        let gex_machine = machine_for_character('a').or(machine_for_character('b'));
 
         assert_full_match(&gex_machine, "a");
         assert_full_match(&gex_machine, "b");
@@ -362,11 +346,13 @@ mod tests {
 
     #[test]
     fn test_zero_or_more() {
-        let gex_machine = machine_for('a').zero_or_more();
+        let gex_machine = machine_for_character('a').zero_or_more();
+
         assert_full_match(&gex_machine, "a");
-        assert_full_match(&gex_machine, "");
         assert_full_match(&gex_machine, "aa");
         assert_full_match(&gex_machine, "aaaaa");
+        assert_full_match(&gex_machine, "");
+
         assert_match(&gex_machine, "aab", "aa");
         assert_match(&gex_machine, "baaaaa", "");
         assert_match(&gex_machine, "c", "");
@@ -374,10 +360,11 @@ mod tests {
 
     #[test]
     fn test_zero_or_one() {
-        let gex_machine = machine_for('a').zero_or_one();
+        let gex_machine = machine_for_character('a').zero_or_one();
 
         assert_full_match(&gex_machine, "a");
         assert_full_match(&gex_machine, "");
+
         assert_match(&gex_machine, "aa", "a");
         assert_match(&gex_machine, "aaaaa", "a");
         assert_match(&gex_machine, "aab", "a");
@@ -387,19 +374,21 @@ mod tests {
 
     #[test]
     fn test_one_or_more() {
-        let gex_machine = machine_for('a').one_or_more();
+        let gex_machine = machine_for_character('a').one_or_more();
 
         assert_full_match(&gex_machine, "a");
         assert_full_match(&gex_machine, "aa");
         assert_full_match(&gex_machine, "aaaaa");
         assert_match(&gex_machine, "aab", "aa");
-        assert_no_match(&gex_machine, "baaaaa");
+        assert_match(&gex_machine, "baaaaa", "aaaaa");
         assert_no_match(&gex_machine, "");
     }
 
     #[test]
     fn test_multiple_alternation() {
-        let gex_machine = machine_for('a').or(machine_for('b')).or(machine_for('c'));
+        let gex_machine = machine_for_character('a')
+            .or(machine_for_character('b'))
+            .or(machine_for_character('c'));
 
         assert_full_match(&gex_machine, "a");
         assert_full_match(&gex_machine, "b");
@@ -410,12 +399,12 @@ mod tests {
     #[test]
     fn test_complex_composition() {
         // pattern: `(a|b)+ca?b*`
-        let gex_machine = machine_for('a')
-            .or(machine_for('b'))
+        let gex_machine = machine_for_character('a')
+            .or(machine_for_character('b'))
             .one_or_more()
-            .cons(machine_for('c'))
-            .cons(machine_for('a').zero_or_one())
-            .cons(machine_for('b').zero_or_more());
+            .cons(machine_for_character('c'))
+            .cons(machine_for_character('a').zero_or_one())
+            .cons(machine_for_character('b').zero_or_more());
 
         assert_full_match(&gex_machine, "ac");
         assert_full_match(&gex_machine, "bc");
