@@ -2,11 +2,14 @@ use crate::gex::machine::{GexMachine, Next, Rule, State, Transition};
 use crate::tokenize::Token;
 
 pub fn machine_for(token: Token, input: &str) -> GexMachine {
-    let range_value = input[token.input_range()]
-        .chars()
-        .next()
-        .expect("Invalid input");
-    return machine_for_character(range_value);
+    if let Some(range_value) = input[token.input_range()].chars().next() {
+        return machine_for_character(range_value);
+    }
+    // Input range had zero width
+    GexMachine::from_states(vec![
+        State::from_transitions(vec![(Rule::Null, Next::Target(1))]),
+        State::accept_state(),
+    ])
 }
 
 // TODO: for all of these, try to eliminate the initial null transition

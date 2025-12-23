@@ -1,6 +1,5 @@
 use crate::gex::features::{FlagMasks, FlagShifts, GexFeatures};
 use std::collections::HashMap;
-use std::convert::TryInto;
 
 // NOTE: this actually forces us to use UTF-8
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -190,7 +189,6 @@ impl GexMachine {
         self.states[0].push((Rule::Null, Next::Target(other_start)));
 
         let new_accept_idx = self.size() + other.states.len();
-        let old_accept_idx = self.size() - 1;
 
         let old_accept = self
             .states
