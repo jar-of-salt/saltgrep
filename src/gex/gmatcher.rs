@@ -1,6 +1,7 @@
 use crate::gex::machine::{GexMachine, Next, Rule};
 use crate::matcher::{Match, Matcher};
 use std::collections::{HashMap, HashSet};
+use std::iter::once;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct MatchCandidate {
@@ -226,7 +227,7 @@ impl GexMachine {
             candidate.end = Some(start_position);
         }
 
-        accepted = accepted || accepted_via_null;
+        // accepted = accepted || accepted_via_null;
 
         for input_char in input[start_position..].chars() {
             let char_len = input_char.len_utf8();
@@ -254,10 +255,27 @@ impl GexMachine {
 }
 
 impl Matcher for GexMachine {
+    fn find_at(&self, input: &str, at: usize) -> Option<Match> {
+        let mut matcher = GexMatcher { captures: None };
+        let start_input = &input[at..];
+
+        // Allow for the case of an empty string match
+        // TODO: test this at a different location than the start of the string w/ a zero or more
+        // quantifier
+        once((0, '\0'))
+            .chain(start_input.char_indices())
+            .map(|(idx, _)| {
+                self.do_find(&start_input[idx..], &mut matcher)
+                    .map(|found| (idx, found))
+            })
+            .find(Option::is_some)
+            .flatten()
+            .map(|(offset, found)| found.shift(offset + at))
+    }
+
     /// Searches the input from the beginning, returning a match if one is found.
     fn find(&self, input: &str) -> Option<Match> {
-        let mut matcher = GexMatcher { captures: None };
-        self.do_find(input, &mut matcher)
+        self.find_at(input, 0)
     }
 
     fn captures(&self, input: &str) -> Option<HashMap<u16, Match>> {
