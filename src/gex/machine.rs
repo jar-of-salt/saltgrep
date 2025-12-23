@@ -126,6 +126,8 @@ impl GexMachine {
         self.states.len()
     }
 
+    // TODO: the problem is in here; the close group item is getting shifted to the incorrect
+    // location (one state short)
     fn add_shifted_flags(
         &mut self,
         other_state_flags: HashMap<usize, Vec<u64>>,
@@ -187,7 +189,7 @@ impl GexMachine {
 
         self.states[0].push((Rule::Null, Next::Target(other_start)));
 
-        let new_accept_idx = self.size() + other.states.len() - 1;
+        let new_accept_idx = self.size() + other.states.len();
         let old_accept_idx = self.size() - 1;
 
         let old_accept = self
@@ -200,26 +202,26 @@ impl GexMachine {
 
         old_accept.1 = Next::Target(new_accept_idx);
 
-        // This can replace the above if we allow the final state to contain more than a single
-        // transition
-        // let final_state = self
-        //     .states
-        //     .last_mut()
-        //     .expect("A non-empty set of states is required");
-
-        // for transition in final_state.transitions.iter_mut() {
-        //     if let (_, Next::Accept) = transition {
-        //         transition.1 = Next::Target(new_accept_idx);
-        //     }
-        // }
-
         let new_states = other.states.into_iter().map(states_shifter(other_start));
 
         self.states.extend(new_states);
 
-        self.add_shifted_flags(other.features.state_flags, old_accept_idx, true);
+        self.add_shifted_flags(other.features.state_flags, other_start, false);
 
         self.max_group_index += other.max_group_index;
+
+        // Maintain separate penultimate state for RHS, allows distinct flags to be maintained
+        // NOTE: for future optimization, it might be possible to resolve this by instead shifting
+        // the GroupOpen flags forward if they are on a null transition, then the close flags can
+        // share a state and not collide
+        self.states
+            .last_mut()
+            .unwrap()
+            .transitions
+            .last_mut()
+            .unwrap()
+            .1 = Next::Target(new_accept_idx);
+        self.states.push(State::accept_state());
 
         self
     }
