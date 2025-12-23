@@ -278,19 +278,38 @@ mod tests {
     }
 
     #[test]
-    fn test_nested_capturing_group() {
-        let machine = compile(r"(a(bc))df(defg)");
+    fn test_capturing_group_with_alternation3() {
+        let machine = compile(r"(abc)df(defg)|(1(23)a)");
 
-        let wrapped_captures = machine.captures(r"abcdfdefgh");
+        // TODO: implement similar method to `assert full match` for captures
+        // TODO: match RHS of alternation
+        let wrapped_captures = machine.captures(r"123abcdfdefg");
 
         assert!(wrapped_captures.is_some());
 
         let captures = wrapped_captures.unwrap();
 
-        assert!(*captures.get(&0).unwrap() == Match { start: 0, end: 9 });
-        assert!(*captures.get(&1).unwrap() == Match { start: 0, end: 3 });
-        assert!(*captures.get(&2).unwrap() == Match { start: 1, end: 3 });
-        assert!(*captures.get(&3).unwrap() == Match { start: 5, end: 9 });
-        assert!(captures.len() == 4);
+        assert_eq!(*captures.get(&0).unwrap(), Match { start: 0, end: 4 });
+        assert_eq!(*captures.get(&3).unwrap(), Match { start: 0, end: 4 });
+        assert_eq!(*captures.get(&4).unwrap(), Match { start: 1, end: 3 });
+        assert_eq!(captures.len(), 3);
+    }
+
+    #[test]
+    fn test_nested_capturing_group() {
+        let machine = compile(r"(a(bc(de)))df(defg)");
+
+        let wrapped_captures = machine.captures(r"abcdedfdefgh");
+
+        assert!(wrapped_captures.is_some());
+
+        let captures = wrapped_captures.unwrap();
+
+        assert_eq!(*captures.get(&0).unwrap(), Match { start: 0, end: 11 });
+        assert_eq!(*captures.get(&1).unwrap(), Match { start: 0, end: 5 });
+        assert_eq!(*captures.get(&2).unwrap(), Match { start: 1, end: 5 });
+        assert_eq!(*captures.get(&3).unwrap(), Match { start: 3, end: 5 });
+        assert_eq!(*captures.get(&4).unwrap(), Match { start: 7, end: 11 });
+        assert_eq!(captures.len(), 5);
     }
 }
