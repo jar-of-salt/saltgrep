@@ -1,6 +1,6 @@
 pub(self) mod features;
 pub mod gmatcher;
-pub mod machine;
+mod machine;
 pub mod simple_machines;
 
 /// The machine is top-level gex API, so exposing it here.
