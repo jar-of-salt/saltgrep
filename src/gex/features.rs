@@ -30,6 +30,22 @@ impl GexFeatures {
     pub fn group_number(flags: u64) -> u16 {
         (flags >> FlagShifts::CapturingGroup as usize) as u16
     }
+
+    pub fn increment_group_number(flags: u64, group_shift: u16) -> u64 {
+        let mut new_flags = flags;
+        let big_new_number: u64 = (GexFeatures::group_number(flags) as u64) + group_shift as u64;
+        let cast_result: Result<u16, _> = big_new_number.try_into();
+        match cast_result {
+            Ok(new_group_number) => {
+                new_flags &= flags & !(FlagMasks::CapturingGroup as u64);
+                new_flags |= (new_group_number as u64) << FlagShifts::CapturingGroup as u64;
+                new_flags
+            }
+            Err(e) => {
+                panic!("New group number exceeds size of u16; error: {:?}", e)
+            }
+        }
+    }
 }
 
 pub enum FlagShifts {
