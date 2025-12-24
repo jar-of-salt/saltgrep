@@ -26,7 +26,11 @@ pub trait Matcher {
         self.find_at(input, 0)
     }
 
-    fn captures(&self, input: &str) -> Option<HashMap<u16, Match>>;
+    fn captures_at(&self, input: &str, at: usize) -> Option<HashMap<u16, Match>>;
+
+    fn captures(&self, input: &str) -> Option<HashMap<u16, Match>> {
+        self.captures_at(input, 0)
+    }
 }
 
 #[cfg(test)]
