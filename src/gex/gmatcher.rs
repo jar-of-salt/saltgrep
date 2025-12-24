@@ -117,6 +117,7 @@ impl GexMachine {
                         captures.insert(group_number, MatchCandidate::with_start(position));
                     }
                     1 => {
+                        println!("close {} at {}", group_number, position);
                         if group_number == 3 {
                             // panic!("debug");
                         }
@@ -233,6 +234,25 @@ impl GexMachine {
             None
         }
     }
+
+    fn find_first_match<T>(
+        &self,
+        matcher: &mut GexMatcher,
+        input: &str,
+        extract_match: impl Fn(Match, &mut GexMatcher) -> T,
+        apply_correction: impl Fn((usize, T)) -> T,
+    ) -> Option<T> {
+        // Allow for the case of an empty string match before iterating through remaining chars
+        once((0, '\0'))
+            .chain(input.char_indices())
+            .map(|(idx, _)| {
+                self.run_machine(&input[idx..], matcher)
+                    .map(|found| (idx, extract_match(found, matcher)))
+            })
+            .find(Option::is_some)
+            .flatten()
+            .map(apply_correction)
+    }
 }
 
 impl Matcher for GexMachine {
@@ -240,34 +260,33 @@ impl Matcher for GexMachine {
         let mut matcher = GexMatcher { captures: None };
         let start_input = &input[at..];
 
-        // Allow for the case of an empty string match
+        let on_found = |found, _: &mut GexMatcher| found;
+        let correction = |(offset, found): (usize, Match)| found.shift(offset + at);
+
+        self.find_first_match(&mut matcher, start_input, on_found, correction)
+
         // TODO: test this at a different location than the start of the string w/ a zero or more
-        // quantifier
-        once((0, '\0'))
-            .chain(start_input.char_indices())
-            .map(|(idx, _)| {
-                self.run_machine(&start_input[idx..], &mut matcher)
-                    .map(|found| (idx, found))
-            })
-            .find(Option::is_some)
-            .flatten()
-            .map(|(offset, found)| found.shift(offset + at))
     }
 
-    /// Searches the input from the beginning, returning a match if one is found.
-    fn find(&self, input: &str) -> Option<Match> {
-        self.find_at(input, 0)
-    }
-
-    fn captures(&self, input: &str) -> Option<HashMap<u16, Match>> {
+    fn captures_at(&self, input: &str, at: usize) -> Option<HashMap<u16, Match>> {
         let mut matcher = GexMatcher {
             captures: Some(HashMap::new()),
         };
+        let start_input = &input[at..];
 
-        self.run_machine(input, &mut matcher).map(|root_match| {
+        let on_found = |found, matcher: &mut GexMatcher| {
             let mut captures = matcher.unwrap_captures();
-            captures.insert(0, root_match);
+            captures.insert(0, found);
             captures
-        })
+        };
+
+        let correction = |(offset, mut captures): (usize, HashMap<u16, Match>)| {
+            for (_, capture) in captures.iter_mut() {
+                *capture = capture.shift(offset + at);
+            }
+            captures
+        };
+
+        self.find_first_match(&mut matcher, start_input, on_found, correction)
     }
 }
