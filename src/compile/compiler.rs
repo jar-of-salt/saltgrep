@@ -16,7 +16,7 @@ type Result<T> = std::result::Result<T, CompilerError>;
 pub enum CompilerError {
     LexicalError(TokenizeError),
     SyntaxError(SyntaxError),
-    MissingOperand(Token),
+    MissingOperand(String),
     Catastrophic(String),
 }
 
@@ -24,6 +24,12 @@ impl fmt::Display for CompilerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Compilation failed")
     }
+}
+
+fn get_operand(info: &str, combination_stack: &mut Vec<GexMachine>) -> Result<GexMachine> {
+    combination_stack
+        .pop()
+        .ok_or_else(|| CompilerError::MissingOperand(info.to_string()))
 }
 
 // NOTE: maybe it would have been easier to figure out token/astnode type layout by writing this
@@ -64,40 +70,32 @@ pub fn compile(input: &str) -> Result<GexMachine> {
             },
             AstNode::Quantifier(qtype, _) => match qtype {
                 QuantifierType::ZeroOrMore => {
-                    let zero_or_more = combination_stack
-                        .pop()
-                        .expect("Operand expected")
-                        .zero_or_more();
-                    combination_stack.push(zero_or_more);
+                    let operand = get_operand("'*' (zero or more)", &mut combination_stack)?;
+                    combination_stack.push(operand.zero_or_more());
                 }
                 QuantifierType::OneOrMore => {
-                    let one_or_more = combination_stack
-                        .pop()
-                        .expect("Operand expected")
-                        .one_or_more();
-                    combination_stack.push(one_or_more);
+                    let operand = get_operand("'+' (one or more)", &mut combination_stack)?;
+                    combination_stack.push(operand.one_or_more());
                 }
                 QuantifierType::ZeroOrOne => {
-                    let zero_or_one = combination_stack
-                        .pop()
-                        .expect("Operand expected")
-                        .zero_or_one();
-                    combination_stack.push(zero_or_one);
+                    let operand = get_operand("'?' (zero or one)", &mut combination_stack)?;
+                    combination_stack.push(operand.zero_or_one());
                 }
             },
             AstNode::Cons(_, _) => {
-                let right = combination_stack.pop().expect("No RHS for cons operation.");
-                let left = combination_stack.pop().expect("No LHS for cons operation.");
+                let right = get_operand("'cons' (right hand side)", &mut combination_stack)?;
+                let left = get_operand("'cons' (left hand side)", &mut combination_stack)?;
                 combination_stack.push(left.cons(right));
             }
             AstNode::Alternation(_, _) => {
-                let right = combination_stack.pop().expect("No RHS for cons operation.");
-                let left = combination_stack.pop().expect("No LHS for cons operation.");
+                let right =
+                    get_operand("'|' (alternation right hand side)", &mut combination_stack)?;
+                let left = get_operand("'|' (alternation left hand side)", &mut combination_stack)?;
                 combination_stack.push(left.or(right));
             }
             AstNode::Group(_) => {
-                let group = combination_stack.pop().expect("Operand expected").group();
-                combination_stack.push(group);
+                let operand = get_operand("'()' (grouping)", &mut combination_stack)?;
+                combination_stack.push(operand.group());
             }
         }
     }
