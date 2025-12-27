@@ -4,10 +4,10 @@ use crate::gex::simple_machines::{
 };
 use crate::gex::GexMachine;
 use crate::railroad::{Ast, AstNode, SyntaxError};
-use crate::tokenize::{
-    tokenize, CharacterClassType, LiteralType, QuantifierType, Token, TokenizeError,
-};
+use crate::tokenize::{tokenize, CharacterClassType, LiteralType, QuantifierType, TokenizeError};
+use std::io;
 
+use std::error;
 use std::fmt;
 
 type Result<T> = std::result::Result<T, CompilerError>;
@@ -20,9 +20,22 @@ pub enum CompilerError {
     Catastrophic(String),
 }
 
+impl error::Error for CompilerError {}
+
 impl fmt::Display for CompilerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Compilation failed")
+        match self {
+            CompilerError::LexicalError(terror) => write!(f, "Invalid Token: {}", terror),
+            CompilerError::SyntaxError(serror) => write!(f, "Invalid Syntax: {}", serror),
+            CompilerError::MissingOperand(msg) => write!(f, "Operand Missing: {}", msg),
+            CompilerError::Catastrophic(msg) => write!(f, "Catastrophic Error: {}", msg),
+        }
+    }
+}
+
+impl From<CompilerError> for io::Error {
+    fn from(err: CompilerError) -> io::Error {
+        io::Error::new(io::ErrorKind::Other, err)
     }
 }
 
@@ -254,6 +267,12 @@ mod tests {
         assert_no_match!(r"[^a-z]+", r"abc");
         assert_no_match!(r"[a-zA-Z]+", r"1203845");
         assert_no_match!(r"[^a-zA-Z]+", r"abcACCD");
+    }
+
+    #[test]
+    fn test_wildcard_matches() {
+        assert_match!(r".*d", "mod", "mod");
+        assert_match!(r".*d", "my mod in rust", "mod");
     }
 
     #[test]
